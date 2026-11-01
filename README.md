@@ -1,0 +1,148 @@
+# PK Access Filter
+
+A Chrome extension that marks each Google Search result as **Accessible**, **Blocked**, **Possibly blocked**, **Unknown** or **Server error** from Pakistan, and can hide results with confirmed blocking evidence.
+
+It is an accessibility checker, not a VPN or proxy. Nothing is hidden unless the user picks a filter.
+
+## How it works
+
+```
+Google Search page                Chrome extension                     Backend on a Pakistan VPS
+──────────────────                ────────────────                     ─────────────────────────
+content.js  ── domains ──▶  background.js (cache, batching,  ── POST /api/v1/check ──▶  Fastify API
+  badges, filter, notice        backoff, chrome.storage)                                 ├─ DNS check (system resolver + DoH control)
+  ◀── results ────────────                                  ◀── evidence + status ───   ├─ HTTPS / HTTP check (SSRF-safe, ≤5 redirects)
+                                                                                         ├─ OONI aggregation API (30 days, cached 12h)
+popup / options (React + Tailwind) ◀── chrome.storage.sync ──▶ settings                 ├─ classification engine
+                                                                                         └─ Postgres (optional) evidence history
+```
+
+The backend runs **on the Pakistan VPS itself**, so its DNS and HTTP checks are the Pakistan probe. No separate probe service is needed.
+
+### Classification rules
+
+| Status | When |
+|---|---|
+| Blocked | Pakistani block page seen, or live failure + OONI confirmed blocking in the last 7 days, or live interference + ≥70% OONI anomalies (≥5 measurements) |
+| Possibly blocked | DNS manipulation (local answer missing/private while an independent DoH resolver has a public answer), HTTPS reset, HTTP 451, or ≥50% recent OONI anomalies |
+| Accessible | Site answered from Pakistan (2xx/3xx, also 401/403/404, since the site responded) |
+| Server error | Site answered with 5xx |
+| Unknown | Timeouts, TLS errors, domain missing everywhere, no data |
+
+DNS failure alone, a timeout alone, or any single HTTP status code is never treated as blocking. A live success always wins over historical OONI data. Every evidence record is stored (when Postgres is configured) so results can be re-classified later.
+
+Cache durations: accessible 20 min, blocked / possibly blocked 15 min, server error 10 min, unknown 5 min, OONI history 12 h. The extension caches the same durations in `chrome.storage.local` (users can raise the minimum in Settings).
+
+## Project layout
+
+```
+backend/
+  src/server.ts                 boot, migrations, pruning, shutdown
+  src/app.ts                    Fastify app, rate limit, routes
+  src/routes/                   accessibility.ts (POST /check), status.ts (GET /status)
+  src/services/                 dns-checker, http-checker, blockpage, ooni-service,
+                                pakistan-probe, classification-engine, accessibility-service
+  src/database/                 repository, migrate, pool
+  src/utils/                    domain + IP validation, TTL cache, limiter
+  migrations/001_init.sql
+  test/
+extension/
+  src/core/                     pure logic: types, domain parsing, filter rules, settings, formatting
+  src/background/               service worker, API client, batching checker
+  src/content/                  result detector, badge + tooltip, filter, hidden-results notice
+  src/popup/ src/options/       React UI
+  src/ui/                       shared components + hooks
+  scripts/build.mjs             builds pages (Vite), scripts (esbuild), manifest and icons
+  test/
+docs/
+  DEPLOYMENT.md                 Pakistan VPS + production guide
+  OONI.md                       OONI integration notes
+```
+
+## Local development
+
+Requirements: Node 20+.
+
+```bash
+cd backend && npm install && cp .env.example .env && npm run dev
+```
+
+```bash
+cd extension && npm install && npm run build
+```
+
+`npm run build` uses `API_URL` (default `http://localhost:8787`). For production:
+
+```bash
+cd extension && API_URL=https://pk-probe.example.com npm run package
+```
+
+Only `https://` URLs are accepted, except localhost.
+
+Running locally is fine for development, but checks then reflect **your** network, not Pakistan.
+
+### Install the extension in Chrome
+
+1. Build it (`npm run build` in `extension/`).
+2. Open `chrome://extensions`, turn on **Developer mode**.
+3. Click **Load unpacked** and select `extension/dist`.
+4. Search on google.com or google.com.pk.
+
+### Tests
+
+```bash
+cd backend && npm test
+```
+
+```bash
+cd extension && npm test
+```
+
+Backend tests cover domain/IP validation, SSRF guards, redirect rules, block-page detection, every classification rule, OONI parsing/backoff, API validation, batching, dedupe and rate limiting. Extension tests cover domain extraction (including Google's opaque `/goto` links), filter rules, settings sanitising, cache policy and result detection (ads, featured snippets, sitelinks, duplicates).
+
+## API
+
+`POST /api/v1/check`
+
+```json
+{ "domains": ["example.com", "example.org"], "country": "PK" }
+```
+
+```json
+{
+  "results": [
+    {
+      "domain": "example.com",
+      "status": "accessible",
+      "confidence": 0.9,
+      "country": "PK",
+      "lastChecked": "2026-11-01T13:08:11.359Z",
+      "evidence": ["dns_resolved", "control_dns_resolved", "https_connection_success", "https_status_200", "ooni_recent_ok"],
+      "method": "DNS + HTTPS/HTTP probe from Pakistan, cross-checked with OONI",
+      "network": { "isp": "PTCL", "asn": "AS17557", "city": "Karachi" },
+      "ttlSeconds": 1200
+    }
+  ],
+  "rejected": []
+}
+```
+
+Max 20 domains per request. Invalid, private or reserved hosts come back in `rejected` and are never contacted.
+
+`GET /api/v1/status` returns probe network info. `GET /health` returns `{ "ok": true }`.
+
+## Security and privacy
+
+- Only bare domains are accepted; no arbitrary URL fetching.
+- All resolved IPs are checked against private, loopback, link-local, CGNAT, multicast and reserved ranges (IPv4 + IPv6, including IPv4-mapped). The connection is pinned to the validated IP, so DNS rebinding can't redirect it.
+- Every redirect is re-validated (http/https only, ports 80/443, public hosts). Max 5 redirects, 64 KB body cap, per-request timeouts.
+- Rate limiting per IP, 16 KB body limit, strict JSON schema.
+- No secrets in the extension. Permissions: `storage` plus the API host only.
+- Badges, tooltip and notice are rendered with `textContent` inside closed Shadow DOM.
+- Only result domains are sent, never search queries, full URLs or browsing history. No accounts.
+
+## Known limits
+
+- One VPS = one ISP. Other Pakistani ISPs may block differently; OONI data per ASN partly covers this (see `docs/DEPLOYMENT.md` for adding more probes).
+- Google changes its markup often. Detection relies on `#search a h3`, `[data-hveid]` and the displayed URL; if badges stop appearing, update `extension/src/content/result-detector.ts`.
+- Block-page fingerprints live in `backend/src/services/blockpage.ts`; add new ones there.
