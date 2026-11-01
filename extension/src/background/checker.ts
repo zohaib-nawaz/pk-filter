@@ -58,8 +58,16 @@ export function resetBackoff(): void {
   pausedUntil = 0;
 }
 
+function normalizeAll(input: string[]): string[] {
+  return [...new Set(input.map(normalizeDomain).filter((d): d is string => d !== null))].slice(0, MAX_DOMAINS_PER_PAGE);
+}
+
+export function lookupCached(input: string[]): Promise<Record<string, CheckResult>> {
+  return readCache(normalizeAll(input), Date.now());
+}
+
 export async function checkDomains(input: string[]): Promise<Record<string, CheckResult>> {
-  const domains = [...new Set(input.map(normalizeDomain).filter((d): d is string => d !== null))].slice(0, MAX_DOMAINS_PER_PAGE);
+  const domains = normalizeAll(input);
   const now = Date.now();
   const cached = await readCache(domains, now);
   schedule(domains.filter((domain) => !cached[domain] && !inflight.has(domain)));

@@ -3,20 +3,24 @@ import { DEFAULT_SETTINGS } from '../core/settings';
 import type { CheckResult, DisplayStatus, Settings } from '../core/types';
 import { sendRequest } from '../shared/messaging';
 import { loadSettings, onRefreshRequested, onSettingsChanged, saveSettings } from '../shared/storage';
+import { decorateVideoResult } from './google-videos';
 import { createHiddenNotice, NOTICE_TAG } from './hidden-notice';
-import { claimResults, releaseAll } from './result-detector';
+import { claimResults, releaseAll, type SearchResult } from './result-detector';
 import { setHidden, unhideAll } from './result-filter';
 import { createIndicator, hideTooltip, INDICATOR_TAG, TOOLTIP_TAG, type Indicator } from './status-indicator';
+import { VIDEO_BUTTON_TAG, type VideoButton } from './video-button';
 
 interface TrackedResult {
+  result: SearchResult;
   container: HTMLElement;
   domain: string;
   indicator: Indicator;
   status: DisplayStatus;
+  video: VideoButton | null;
 }
 
 const SCAN_DEBOUNCE_MS = 400;
-const OWN_TAGS = new Set([INDICATOR_TAG, NOTICE_TAG, TOOLTIP_TAG].map((tag) => tag.toUpperCase()));
+const OWN_TAGS = new Set([INDICATOR_TAG, NOTICE_TAG, TOOLTIP_TAG, VIDEO_BUTTON_TAG].map((tag) => tag.toUpperCase()));
 
 const tracked: TrackedResult[] = [];
 const notice = createHiddenNotice(() => void saveSettings({ filterMode: 'all' }));
@@ -44,9 +48,24 @@ function applyResults(results: Record<string, CheckResult>): void {
   applyFilter();
 }
 
+function videosWanted(): boolean {
+  return settings.videoDownloader && settings.videoOnGoogle;
+}
+
+function refreshVideos(): void {
+  for (const entry of tracked) {
+    entry.video?.remove();
+    entry.video = videosWanted() ? decorateVideoResult(entry.result) : null;
+  }
+}
+
 async function check(domains: string[]): Promise<void> {
   if (domains.length === 0) return;
-  const response = await sendRequest({ type: 'check', domains });
+  const cached = await sendRequest({ type: 'lookup', domains });
+  if (cached) applyResults(cached.results);
+  const missing = domains.filter((domain) => !cached?.results[domain]);
+  if (missing.length === 0) return;
+  const response = await sendRequest({ type: 'check', domains: missing });
   if (response) applyResults(response.results);
 }
 
@@ -59,7 +78,8 @@ function scan(): void {
     const indicator = createIndicator();
     indicator.update('checking', null);
     result.heading.append(indicator.element);
-    tracked.push({ container: result.container, domain: result.domain, indicator, status: 'checking' });
+    const video = videosWanted() ? decorateVideoResult(result) : null;
+    tracked.push({ result, container: result.container, domain: result.domain, indicator, status: 'checking', video });
   }
   void check([...new Set(found.map((result) => result.domain))]);
 }
@@ -84,7 +104,10 @@ function teardown(): void {
   observer?.disconnect();
   observer = null;
   window.clearTimeout(scanTimer);
-  for (const entry of tracked) entry.indicator.remove();
+  for (const entry of tracked) {
+    entry.indicator.remove();
+    entry.video?.remove();
+  }
   tracked.length = 0;
   hideTooltip();
   notice.remove();
@@ -111,11 +134,14 @@ async function start(): Promise<void> {
   settings = await loadSettings();
   if (settings.enabled) activate();
   onSettingsChanged((next) => {
-    const wasEnabled = settings.enabled;
+    const previous = settings;
     settings = next;
     if (!next.enabled) teardown();
-    else if (!wasEnabled) activate();
-    else applyFilter();
+    else if (!previous.enabled) activate();
+    else {
+      applyFilter();
+      if (previous.videoDownloader !== next.videoDownloader || previous.videoOnGoogle !== next.videoOnGoogle) refreshVideos();
+    }
   });
   onRefreshRequested(recheckAll);
 }

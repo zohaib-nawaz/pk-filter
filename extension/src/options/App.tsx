@@ -6,6 +6,7 @@ import { ServiceSummary } from '../ui/components/ServiceSummary';
 import { Switch } from '../ui/components/Switch';
 import { useOverview } from '../ui/hooks/useOverview';
 import { useSettings } from '../ui/hooks/useSettings';
+import { useVideoDownloader } from '../ui/hooks/useVideoDownloader';
 
 const selectClass =
   'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900';
@@ -13,6 +14,7 @@ const selectClass =
 export function App() {
   const { settings, update } = useSettings();
   const { overview, busy, refresh, clearCache } = useOverview();
+  const downloader = useVideoDownloader(settings, update);
 
   if (!settings) return null;
 
@@ -50,6 +52,33 @@ export function App() {
         />
       </Section>
 
+      <Section
+        title="Video downloader"
+        description="Shows a download icon for direct MP4, WebM and MOV videos. Streaming, DRM-protected and sign-in-only videos are never downloaded."
+      >
+        <Switch
+          checked={settings.videoDownloader}
+          label="Enable video downloader"
+          description="Chrome will ask for download and site access. Downloads only start when you click."
+          onChange={(enabled) => void downloader.setEnabled(enabled)}
+        />
+        {downloader.error && <p className="text-xs text-red-600 dark:text-red-400">{downloader.error}</p>}
+        <div className={`flex flex-col gap-3 ${settings.videoDownloader ? '' : 'pointer-events-none opacity-50'}`}>
+          <Switch
+            checked={settings.videoOnGoogle}
+            label="Icons on Google results"
+            description="Marks direct video files and streaming-only videos in search results"
+            onChange={(videoOnGoogle) => void update({ videoOnGoogle })}
+          />
+          <Switch
+            checked={settings.videoOnPages}
+            label="Icons on video pages"
+            description="Detects videos on the pages you open and adds a download icon"
+            onChange={(videoOnPages) => void update({ videoOnPages })}
+          />
+        </div>
+      </Section>
+
       <Section title="Checking frequency" description="How long a measurement is reused before the site is checked again.">
         <select
           className={selectClass}
@@ -79,7 +108,8 @@ export function App() {
       <Section title="Privacy">
         <p className="text-sm text-neutral-600 dark:text-neutral-300">
           Only the domain names of search results are sent to the checking service. Search queries, full URLs and
-          browsing history are never collected, and no account is needed.
+          browsing history are never collected, and no account is needed. Videos download straight from the website to
+          your computer through Chrome; nothing passes through our server.
         </p>
       </Section>
     </main>

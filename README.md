@@ -33,6 +33,28 @@ DNS failure alone, a timeout alone, or any single HTTP status code is never trea
 
 Cache durations: accessible 20 min, blocked / possibly blocked 15 min, server error 10 min, unknown 5 min, OONI history 12 h. The extension caches the same durations in `chrome.storage.local` (users can raise the minimum in Settings).
 
+## Video downloader (optional)
+
+Off by default. Turn it on in **Settings → Video downloader**; Chrome then asks for `downloads`, `notifications`, `scripting` and site access. Turning it off removes those permissions again.
+
+| Setting | What it does |
+|---|---|
+| Enable video downloader | Master switch, requests/removes permissions |
+| Icons on Google results | Download pill for direct video links; "Streaming only" tag for YouTube/Vimeo/TikTok-style results |
+| Icons on video pages | Registers `video.js` on all sites; adds a download icon on `<video>` players and direct video links |
+
+How a video is judged:
+
+1. `blob:` / MediaSource, `.m3u8`, `.mpd` or DRM (`video.mediaKeys`) → shown as not downloadable, never fetched.
+2. Otherwise the background sends a `HEAD` (or a 1-byte ranged `GET`) to the source. Only `video/mp4`, `video/webm`, `video/quicktime`, `video/x-m4v`, `video/ogg`, or `application/octet-stream` with a video extension, count as downloadable. 401/403/404/5xx get clear messages.
+3. The download starts only on click, through `chrome.downloads.download()`. The file goes straight from the website to disk; nothing passes through the backend or JavaScript memory.
+
+Safety: http/https only, localhost / private / link-local IP literals and `.local`-style hosts blocked, final redirect URL re-checked, filenames sanitized with the extension kept, duplicate clicks and already-running URLs rejected.
+
+Popup → **Downloads** tab shows title, format, size, progress and status, with Pause, Resume, Cancel, Retry, Open and Show in folder. Chrome keeps the real download state, so it survives service-worker restarts and browser restarts; interrupted downloads offer Resume when the server supports it, otherwise Retry.
+
+Performance: Google results render first; cached accessibility results are applied straight away (`lookup`), only new domains go to the backend in batches (`check`). Video checks run on demand, at most 3 at a time, and are cached for 10 minutes.
+
 ## Project layout
 
 ```
@@ -48,8 +70,8 @@ backend/
   test/
 extension/
   src/core/                     pure logic: types, domain parsing, filter rules, settings, formatting
-  src/background/               service worker, API client, batching checker
-  src/content/                  result detector, badge + tooltip, filter, hidden-results notice
+  src/background/               service worker, API client, batching checker, media inspector, download manager
+  src/content/                  result detector, badge + tooltip, filter, notice, video buttons and video-page script
   src/popup/ src/options/       React UI
   src/ui/                       shared components + hooks
   scripts/build.mjs             builds pages (Vite), scripts (esbuild), manifest and icons

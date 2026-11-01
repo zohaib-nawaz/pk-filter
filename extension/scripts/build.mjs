@@ -21,9 +21,11 @@ const manifest = {
   manifest_version: 3,
   name: 'PK Access Filter',
   version: pkg.version,
-  description: 'Shows which Google Search results are accessible from Pakistan and can hide confirmed blocked sites.',
+  description: 'Shows which Google results are accessible from Pakistan, hides confirmed blocked sites and downloads direct video files.',
   permissions: ['storage'],
   host_permissions: [`${apiUrl.origin}/*`],
+  optional_permissions: ['downloads', 'downloads.open', 'notifications', 'scripting'],
+  optional_host_permissions: ['http://*/*', 'https://*/*'],
   background: { service_worker: 'background.js' },
   content_scripts: [
     {
@@ -53,6 +55,7 @@ await buildScripts({
   entryPoints: {
     background: resolve(root, 'src/background/service-worker.ts'),
     content: resolve(root, 'src/content/google-search.ts'),
+    video: resolve(root, 'src/content/video-page.ts'),
   },
   outdir: dist,
   bundle: true,

@@ -5,6 +5,9 @@ export const DEFAULT_SETTINGS: Settings = {
   filterMode: 'all',
   showUnknown: true,
   minCacheMinutes: 0,
+  videoDownloader: false,
+  videoOnGoogle: true,
+  videoOnPages: true,
 };
 
 export const FILTER_MODES: Array<{ value: FilterMode; label: string; hint: string }> = [
@@ -23,12 +26,19 @@ export const CHECK_FREQUENCIES: Array<{ value: number; label: string }> = [
 const MODES = new Set<FilterMode>(FILTER_MODES.map((mode) => mode.value));
 const FREQUENCIES = new Set(CHECK_FREQUENCIES.map((option) => option.value));
 
+function flag(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
 export function sanitizeSettings(input: unknown): Settings {
   const raw = (input ?? {}) as Partial<Record<keyof Settings, unknown>>;
   return {
-    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : DEFAULT_SETTINGS.enabled,
+    enabled: flag(raw.enabled, DEFAULT_SETTINGS.enabled),
     filterMode: MODES.has(raw.filterMode as FilterMode) ? (raw.filterMode as FilterMode) : DEFAULT_SETTINGS.filterMode,
-    showUnknown: typeof raw.showUnknown === 'boolean' ? raw.showUnknown : DEFAULT_SETTINGS.showUnknown,
+    showUnknown: flag(raw.showUnknown, DEFAULT_SETTINGS.showUnknown),
     minCacheMinutes: FREQUENCIES.has(raw.minCacheMinutes as number) ? (raw.minCacheMinutes as number) : DEFAULT_SETTINGS.minCacheMinutes,
+    videoDownloader: flag(raw.videoDownloader, DEFAULT_SETTINGS.videoDownloader),
+    videoOnGoogle: flag(raw.videoOnGoogle, DEFAULT_SETTINGS.videoOnGoogle),
+    videoOnPages: flag(raw.videoOnPages, DEFAULT_SETTINGS.videoOnPages),
   };
 }

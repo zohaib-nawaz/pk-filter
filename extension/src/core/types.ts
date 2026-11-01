@@ -27,6 +27,9 @@ export interface Settings {
   filterMode: FilterMode;
   showUnknown: boolean;
   minCacheMinutes: number;
+  videoDownloader: boolean;
+  videoOnGoogle: boolean;
+  videoOnPages: boolean;
 }
 
 export interface SyncState {
@@ -45,4 +48,36 @@ export interface OverviewStats {
   cachedDomains: number;
   sync: SyncState;
   service: ServiceStatus;
+}
+
+export type MediaStatus = 'downloadable' | 'streaming' | 'protected' | 'unavailable' | 'unsupported';
+
+export interface MediaInfo {
+  status: MediaStatus;
+  url: string;
+  extension: string | null;
+  mime: string | null;
+  sizeBytes: number | null;
+  reason: string;
+}
+
+export interface DownloadRecord {
+  id: number;
+  url: string;
+  title: string;
+  extension: string;
+  sizeBytes: number | null;
+  startedAt: string;
+}
+
+export type DownloadState = 'in_progress' | 'paused' | 'complete' | 'interrupted' | 'cancelled' | 'missing';
+
+export interface DownloadView {
+  record: DownloadRecord;
+  state: DownloadState;
+  bytesReceived: number;
+  totalBytes: number | null;
+  canResume: boolean;
+  error: string | null;
+  fileExists: boolean;
 }

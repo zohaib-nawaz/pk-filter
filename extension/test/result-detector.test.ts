@@ -32,3 +32,15 @@ describe('claimResults', () => {
     expect(claimResults(document, 'https://www.google.com')).toHaveLength(2);
   });
 });
+
+describe('decorateVideoResult', () => {
+  it('marks streaming platforms without promising a download', async () => {
+    const { decorateVideoResult } = await import('../src/content/google-videos');
+    document.body.innerHTML = `<div id="search"><div data-hveid="1"><a href="/goto?url=x"><h3>Clip</h3><div><span class="VuuXrf">YouTube · Channel</span><cite>youtube.com</cite></div></a></div>
+      <div data-hveid="2"><a href="https://www.dawn.com/news"><h3>News</h3><cite>https://www.dawn.com</cite></a></div></div>`;
+    const results = claimResults(document, 'https://www.google.com');
+    const buttons = results.map(decorateVideoResult);
+    expect(buttons[0]).not.toBeNull();
+    expect(buttons[1]).toBeNull();
+  });
+});
