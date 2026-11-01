@@ -1,9 +1,10 @@
-import { describeSource, sourceKind } from '../core/media';
+import { describeSource, MEDIA_LINK_EXTENSIONS, sourceKind } from '../core/media';
 import { titleFromUrl } from '../core/filename';
 import { isVideoButtonShown } from '../core/video-visibility';
 import type { MediaInfo, PageVideo, Settings } from '../core/types';
 import { sendRequest } from '../shared/messaging';
 import { loadSettings, onSettingsChanged } from '../shared/storage';
+import { metadataMediaSources } from './page-metadata';
 import { prepareDownload } from './video-actions';
 import { createVideoButton, VIDEO_BUTTON_TAG, type VideoButton } from './video-button';
 
@@ -13,26 +14,26 @@ interface TrackedVideo {
   visible: boolean;
   listeners: AbortController;
   media: PageVideo | null;
+  fallback: string | null;
 }
 
-interface TrackedLink {
+interface TrackedInline {
   button: VideoButton;
   media: PageVideo | null;
 }
 
 const TAKEOVER_EVENT = 'pkaf-video-takeover';
 const MAX_VIDEOS = 12;
-const MAX_LINKS = 30;
+const MAX_INLINE = 30;
 const MIN_WIDTH = 160;
 const MIN_HEIGHT = 90;
 const SCAN_DEBOUNCE_MS = 800;
 const REPORT_DEBOUNCE_MS = 300;
-const LINK_SELECTOR = ['mp4', 'webm', 'mov', 'm4v']
-  .flatMap((ext) => [`a[href$=".${ext}" i]`, `a[href*=".${ext}?" i]`])
-  .join(',');
+const LINK_SELECTOR = MEDIA_LINK_EXTENSIONS.flatMap((ext) => [`a[href$=".${ext}" i]`, `a[href*=".${ext}?" i]`]).join(',');
 
 const videos = new Map<HTMLVideoElement, TrackedVideo>();
-const links = new Map<HTMLAnchorElement, TrackedLink>();
+const inline = new Map<Element, TrackedInline>();
+const usedFallbacks = new Set<string>();
 let observer: MutationObserver | null = null;
 let intersection: IntersectionObserver | null = null;
 let scanTimer: number | undefined;
@@ -47,9 +48,23 @@ function isWanted(settings: Settings): boolean {
   return settings.videoDownloader && settings.videoOnPages;
 }
 
-function videoSources(video: HTMLVideoElement): string[] {
-  const sources = [video.currentSrc, video.src, ...[...video.querySelectorAll('source')].map((source) => source.src)];
+function mediaSources(element: HTMLMediaElement): string[] {
+  const sources = [element.currentSrc, element.src, ...[...element.querySelectorAll('source')].map((source) => source.src)];
   return [...new Set(sources.filter(Boolean))];
+}
+
+function playableCandidate(sources: string[]): string | null {
+  const kinds = sources.map((source) => ({ source, kind: sourceKind(source, location.href) }));
+  const candidate = kinds.find((item) => item.kind === 'direct') ?? kinds.find((item) => item.kind === 'unknown');
+  return candidate ? new URL(candidate.source, location.href).toString() : null;
+}
+
+function pickFallback(tracked: TrackedVideo): string | null {
+  const available = metadataMediaSources();
+  if (tracked.fallback && available.includes(tracked.fallback)) return tracked.fallback;
+  const next = available.find((url) => !usedFallbacks.has(url)) ?? null;
+  if (next) usedFallbacks.add(next);
+  return next;
 }
 
 function toPageVideo(info: MediaInfo | null, title: string): PageVideo | null {
@@ -59,7 +74,7 @@ function toPageVideo(info: MediaInfo | null, title: string): PageVideo | null {
 
 function report(): void {
   const found = new Map<string, PageVideo>();
-  for (const item of [...videos.values(), ...links.values()]) {
+  for (const item of [...videos.values(), ...inline.values()]) {
     if (item.media && !found.has(item.media.url)) found.set(item.media.url, item.media);
   }
   const list = [...found.values()];
@@ -75,7 +90,7 @@ function scheduleReport(): void {
 }
 
 function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
-  const sources = videoSources(video);
+  const sources = mediaSources(video);
   const signature = sources.join('|') || null;
   if (signature === tracked.source) return;
   tracked.source = signature;
@@ -85,19 +100,20 @@ function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
     tracked.button.set('unavailable', 'This video is DRM-protected and cannot be downloaded');
     return;
   }
-  const kinds = sources.map((source) => ({ source, kind: sourceKind(source, location.href) }));
-  const candidate = kinds.find((item) => item.kind === 'direct') ?? kinds.find((item) => item.kind === 'unknown');
-  if (candidate) {
-    const title = document.title || titleFromUrl(candidate.source);
-    void prepareDownload(tracked.button, new URL(candidate.source, location.href).toString(), title).then((info) => {
-      if (tracked.source !== signature) return;
-      tracked.media = toPageVideo(info, title);
-      scheduleReport();
-    });
+  const streamed = sources.map((source) => sourceKind(source, location.href)).find((kind) => kind === 'blob' || kind === 'streaming');
+  const direct = playableCandidate(sources);
+  if (!direct && streamed) tracked.fallback = pickFallback(tracked);
+  const url = direct ?? (streamed ? tracked.fallback : null);
+  if (!url) {
+    tracked.button.set('unavailable', describeSource(streamed ?? 'invalid'));
     return;
   }
-  const streamed = kinds.find((item) => item.kind === 'blob' || item.kind === 'streaming');
-  tracked.button.set('unavailable', describeSource(streamed?.kind ?? 'invalid'));
+  const title = document.title || titleFromUrl(url);
+  void prepareDownload(tracked.button, url, title).then((info) => {
+    if (tracked.source !== signature) return;
+    tracked.media = toPageVideo(info, title);
+    scheduleReport();
+  });
 }
 
 function position(): void {
@@ -123,7 +139,14 @@ function schedulePosition(): void {
 
 function trackVideo(video: HTMLVideoElement): void {
   const button = createVideoButton('overlay', schedulePosition);
-  const tracked: TrackedVideo = { button, source: null, visible: false, listeners: new AbortController(), media: null };
+  const tracked: TrackedVideo = {
+    button,
+    source: null,
+    visible: false,
+    listeners: new AbortController(),
+    media: null,
+    fallback: null,
+  };
   videos.set(video, tracked);
   document.body.append(button.element);
   video.addEventListener('loadedmetadata', () => evaluate(video, tracked), { signal: tracked.listeners.signal });
@@ -131,28 +154,37 @@ function trackVideo(video: HTMLVideoElement): void {
   evaluate(video, tracked);
 }
 
-function applyLinkVisibility(button: VideoButton): void {
+function applyInlineVisibility(button: VideoButton): void {
   button.element.style.display = isVideoButtonShown(button.state(), showUnavailable) ? '' : 'none';
+}
+
+function trackInline(element: Element, url: string, title: string): void {
+  const button: VideoButton = createVideoButton('inline', () => applyInlineVisibility(button));
+  applyInlineVisibility(button);
+  const tracked: TrackedInline = { button, media: null };
+  inline.set(element, tracked);
+  element.insertAdjacentElement('afterend', button.element);
+  void prepareDownload(button, url, title).then((info) => {
+    tracked.media = toPageVideo(info, title);
+    scheduleReport();
+  });
 }
 
 function trackLink(link: HTMLAnchorElement): void {
   if (sourceKind(link.href) !== 'direct') return;
-  const button: VideoButton = createVideoButton('inline', () => applyLinkVisibility(button));
-  applyLinkVisibility(button);
-  const tracked: TrackedLink = { button, media: null };
-  links.set(link, tracked);
-  link.insertAdjacentElement('afterend', button.element);
-  const title = link.textContent?.trim() || titleFromUrl(link.href);
-  void prepareDownload(button, link.href, title).then((info) => {
-    tracked.media = toPageVideo(info, title);
-    scheduleReport();
-  });
+  trackInline(link, link.href, link.textContent?.trim() || titleFromUrl(link.href));
+}
+
+function trackAudio(audio: HTMLAudioElement): void {
+  const url = playableCandidate(mediaSources(audio));
+  if (url) trackInline(audio, url, document.title || titleFromUrl(url));
 }
 
 function forgetVideo(video: HTMLVideoElement, tracked: TrackedVideo): void {
   tracked.listeners.abort();
   tracked.button.remove();
   intersection?.unobserve(video);
+  if (tracked.fallback) usedFallbacks.delete(tracked.fallback);
   videos.delete(video);
   scheduleReport();
 }
@@ -161,10 +193,10 @@ function forgetDetached(): void {
   for (const [video, tracked] of videos) {
     if (!video.isConnected) forgetVideo(video, tracked);
   }
-  for (const [link, tracked] of links) {
-    if (link.isConnected) continue;
+  for (const [element, tracked] of inline) {
+    if (element.isConnected) continue;
     tracked.button.remove();
-    links.delete(link);
+    inline.delete(element);
     scheduleReport();
   }
 }
@@ -175,9 +207,13 @@ function scan(): void {
     if (videos.size >= MAX_VIDEOS) break;
     if (!videos.has(video)) trackVideo(video);
   }
+  for (const audio of document.querySelectorAll('audio')) {
+    if (inline.size >= MAX_INLINE) break;
+    if (!inline.has(audio)) trackAudio(audio);
+  }
   for (const link of document.querySelectorAll<HTMLAnchorElement>(LINK_SELECTOR)) {
-    if (links.size >= MAX_LINKS) break;
-    if (!links.has(link)) trackLink(link);
+    if (inline.size >= MAX_INLINE) break;
+    if (!inline.has(link)) trackLink(link);
   }
   schedulePosition();
 }
@@ -223,8 +259,9 @@ function deactivate(): void {
   window.removeEventListener('resize', schedulePosition);
   document.removeEventListener('fullscreenchange', schedulePosition);
   for (const [video, tracked] of videos) forgetVideo(video, tracked);
-  for (const tracked of links.values()) tracked.button.remove();
-  links.clear();
+  for (const tracked of inline.values()) tracked.button.remove();
+  inline.clear();
+  usedFallbacks.clear();
   window.clearTimeout(reportTimer);
   report();
 }
@@ -253,7 +290,7 @@ async function start(): Promise<void> {
       return;
     }
     activate();
-    for (const tracked of links.values()) applyLinkVisibility(tracked.button);
+    for (const tracked of inline.values()) applyInlineVisibility(tracked.button);
     schedulePosition();
   };
   applySettings(await loadSettings());

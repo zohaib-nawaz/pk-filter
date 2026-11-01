@@ -47,7 +47,7 @@ describe('classifyMediaResponse', () => {
   it('never claims non-video or failing links are downloadable', () => {
     expect(response({ contentType: 'text/html; charset=utf-8' }).status).toBe('unsupported');
     expect(response({ contentType: 'application/vnd.apple.mpegurl' }).status).toBe('streaming');
-    expect(response({ contentType: 'video/x-matroska' }).status).toBe('unsupported');
+    expect(response({ contentType: 'video/x-unknown-codec' }).status).toBe('unsupported');
     expect(response({ contentType: 'application/octet-stream', url: 'https://cdn.example.com/file.bin' }).status).toBe('unsupported');
     expect(response({ status: 403 })).toMatchObject({ status: 'unavailable', reason: 'Access denied or the link has expired' });
     expect(response({ status: 404 }).status).toBe('unavailable');
@@ -97,5 +97,41 @@ describe('video icon visibility', () => {
     expect(['ready', 'starting', 'started', 'error'].map((state) => isVideoButtonShown(state as 'ready', false))).toEqual([true, true, true, true]);
     expect(isVideoButtonShown('unavailable', true)).toBe(true);
     expect(isVideoButtonShown('idle', true)).toBe(false);
+  });
+});
+
+describe('wider media formats', () => {
+  it('accepts common video and audio types, including aliases', () => {
+    expect(response({ contentType: 'video/x-matroska', url: 'https://cdn.example.com/a' })).toMatchObject({ status: 'downloadable', extension: 'mkv' });
+    expect(response({ contentType: 'video/avi' }).extension).toBe('avi');
+    expect(response({ contentType: 'audio/mpeg' }).extension).toBe('mp3');
+    expect(response({ contentType: 'audio/x-m4a' }).extension).toBe('m4a');
+    expect(response({ contentType: 'audio/wave' }).extension).toBe('wav');
+    expect(response({ contentType: 'video/mp2t' }).extension).toBe('ts');
+    expect(response({ contentType: 'application/octet-stream', url: 'https://cdn.example.com/song.flac' }).extension).toBe('flac');
+    expect(sourceKind('https://x.com/a/podcast.mp3')).toBe('direct');
+  });
+
+  it('keeps TypeScript-looking links out of link scanning', async () => {
+    const { MEDIA_LINK_EXTENSIONS } = await import('../src/core/media');
+    expect(MEDIA_LINK_EXTENSIONS).toContain('mkv');
+    expect(MEDIA_LINK_EXTENSIONS).not.toContain('ts');
+  });
+});
+
+describe('mediaUrlsFromJsonLd', () => {
+  it('finds contentUrl on video and audio objects, including nested graphs', async () => {
+    const { mediaUrlsFromJsonLd } = await import('../src/core/page-metadata');
+    const page = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@graph': [
+        { '@type': 'WebPage', name: 'x' },
+        { '@type': 'VideoObject', contentUrl: 'https://cdn.example.com/v.mp4', embedUrl: 'https://player.example.com/1' },
+        { '@type': ['Thing', 'AudioObject'], contentUrl: 'https://cdn.example.com/a.mp3' },
+      ],
+    });
+    expect(mediaUrlsFromJsonLd(page).sort()).toEqual(['https://cdn.example.com/a.mp3', 'https://cdn.example.com/v.mp4']);
+    expect(mediaUrlsFromJsonLd('{not json')).toEqual([]);
+    expect(mediaUrlsFromJsonLd(JSON.stringify({ '@type': 'Article', contentUrl: 'https://x.com/a.mp4' }))).toEqual([]);
   });
 });

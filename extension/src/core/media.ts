@@ -1,12 +1,51 @@
 import type { MediaInfo } from './types';
 
-const VIDEO_TYPES: Record<string, string> = {
+const MEDIA_TYPES: Record<string, string> = {
   mp4: 'video/mp4',
   m4v: 'video/x-m4v',
   webm: 'video/webm',
   mov: 'video/quicktime',
   ogv: 'video/ogg',
+  mkv: 'video/x-matroska',
+  avi: 'video/x-msvideo',
+  flv: 'video/x-flv',
+  '3gp': 'video/3gpp',
+  mpeg: 'video/mpeg',
+  mpg: 'video/mpeg',
+  ts: 'video/mp2t',
+  wmv: 'video/x-ms-wmv',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
+  opus: 'audio/opus',
+  wav: 'audio/wav',
+  flac: 'audio/flac',
+  weba: 'audio/webm',
 };
+
+const MIME_ALIASES: Record<string, string> = {
+  'video/avi': 'avi',
+  'video/msvideo': 'avi',
+  'video/x-ms-asf': 'wmv',
+  'audio/mp3': 'mp3',
+  'audio/x-mp3': 'mp3',
+  'audio/m4a': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/x-aac': 'aac',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/vnd.wave': 'wav',
+  'audio/x-flac': 'flac',
+};
+
+const MIME_EXTENSIONS: Record<string, string> = Object.entries(MEDIA_TYPES).reduce<Record<string, string>>(
+  (map, [extension, mime]) => (map[mime] ? map : { ...map, [mime]: extension }),
+  { ...MIME_ALIASES },
+);
+
+export const MEDIA_LINK_EXTENSIONS = Object.keys(MEDIA_TYPES).filter((extension) => extension !== 'ts');
 
 const STREAMING_EXTENSIONS = new Set(['m3u8', 'mpd', 'ism', 'f4m']);
 const STREAMING_MIMES = ['application/vnd.apple.mpegurl', 'application/x-mpegurl', 'audio/mpegurl', 'application/dash+xml'];
@@ -69,13 +108,11 @@ export function extensionFromPath(url: URL): string | null {
 }
 
 export function extensionFromMime(mime: string | null): string | null {
-  if (!mime) return null;
-  const entry = Object.entries(VIDEO_TYPES).find(([, type]) => type === mime);
-  return entry?.[0] ?? null;
+  return mime ? (MIME_EXTENSIONS[mime] ?? null) : null;
 }
 
-export function isVideoExtension(extension: string | null): boolean {
-  return extension !== null && extension in VIDEO_TYPES;
+export function isMediaExtension(extension: string | null): boolean {
+  return extension !== null && extension in MEDIA_TYPES;
 }
 
 export function sourceKind(raw: string | null | undefined, base?: string): SourceKind {
@@ -85,7 +122,7 @@ export function sourceKind(raw: string | null | undefined, base?: string): Sourc
   if (!url) return 'invalid';
   const extension = extensionFromPath(url);
   if (extension && STREAMING_EXTENSIONS.has(extension)) return 'streaming';
-  return isVideoExtension(extension) ? 'direct' : 'unknown';
+  return isMediaExtension(extension) ? 'direct' : 'unknown';
 }
 
 export function isStreamingPlatform(domain: string): boolean {
@@ -137,18 +174,18 @@ export function classifyMediaResponse(response: MediaResponse): MediaInfo {
     mime,
     sizeBytes,
     status: 'downloadable',
-    reason: 'Direct video file',
+    reason: 'Direct media file',
   });
-  if (mime?.startsWith('video/')) {
+  if (mime?.startsWith('video/') || mime?.startsWith('audio/')) {
     const extension = extensionFromMime(mime);
-    return extension ? downloadable(extension) : { ...base, mime, status: 'unsupported', reason: `Unsupported video format (${mime})` };
+    return extension ? downloadable(extension) : { ...base, mime, status: 'unsupported', reason: `Unsupported media format (${mime})` };
   }
-  if (mime !== null && GENERIC_BINARY.includes(mime) && isVideoExtension(pathExtension)) return downloadable(pathExtension as string);
-  return { ...base, mime, status: 'unsupported', reason: 'This link is not a video file' };
+  if (mime !== null && GENERIC_BINARY.includes(mime) && isMediaExtension(pathExtension)) return downloadable(pathExtension as string);
+  return { ...base, mime, status: 'unsupported', reason: 'This link is not a video or audio file' };
 }
 
 export function describeSource(kind: SourceKind): string {
-  if (kind === 'blob') return 'This video is streamed by the page and cannot be downloaded directly';
+  if (kind === 'blob') return 'This media is streamed in pieces by the page and has no single file to download';
   if (kind === 'streaming') return 'Streaming playlist (HLS/DASH) is not supported';
-  return 'No downloadable video source found';
+  return 'No downloadable media source found';
 }

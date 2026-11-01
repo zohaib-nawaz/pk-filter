@@ -54,7 +54,7 @@ export function App() {
 
       <Section
         title="Video downloader"
-        description="Shows a download icon for direct MP4, WebM and MOV videos. Streaming, DRM-protected and sign-in-only videos are never downloaded."
+        description="Shows a download icon for direct video and audio files (MP4, WebM, MOV, MKV, AVI, MP3, M4A, WAV and more). Streaming, DRM-protected and sign-in-only media are never downloaded."
       >
         <Switch
           checked={settings.videoDownloader}
@@ -73,7 +73,7 @@ export function App() {
           <Switch
             checked={settings.videoOnPages}
             label="Icons on video pages"
-            description="Detects videos on the pages you open and adds a download icon"
+            description="Detects video and audio players, media links and the page's own published video file"
             onChange={(videoOnPages) => void update({ videoOnPages })}
           />
           <Switch

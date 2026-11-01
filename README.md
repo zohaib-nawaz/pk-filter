@@ -44,10 +44,12 @@ Off by default. Turn it on in **Settings → Video downloader**; Chrome then ask
 | Icons on video pages | Registers `video.js` on all sites; adds a download icon on `<video>` players and direct video links |
 | Show not-downloadable icons | Off by default. When on, streaming/DRM videos and Google streaming results get a grey icon explaining why they can't be downloaded |
 
-How a video is judged:
+Supported files: video MP4, M4V, WebM, MOV, OGV, MKV, AVI, FLV, 3GP, MPEG/MPG, TS, WMV, and audio MP3, M4A, AAC, OGG/OGA, Opus, WAV, FLAC, WEBA. Sources: `<video>` and `<audio>` players, links to media files, and the page's own published file (`og:video`, `og:audio`, `twitter:player:stream`, or schema.org `VideoObject`/`AudioObject` `contentUrl`).
 
-1. `blob:` / MediaSource, `.m3u8`, `.mpd` or DRM (`video.mediaKeys`) → shown as not downloadable, never fetched.
-2. Otherwise the background sends a `HEAD` (or a 1-byte ranged `GET`) to the source. Only `video/mp4`, `video/webm`, `video/quicktime`, `video/x-m4v`, `video/ogg`, or `application/octet-stream` with a video extension, count as downloadable. 401/403/404/5xx get clear messages.
+How a file is judged:
+
+1. A player using `blob:` / MediaSource, `.m3u8` or `.mpd` gets the page's published file if there is one; otherwise it is not downloadable. Streams are never stitched together, and DRM players (`mediaKeys`) are always skipped.
+2. Every candidate gets a `HEAD` (or a 1-byte ranged `GET`). Only a `video/*` or `audio/*` type from the list above, or `application/octet-stream` with a matching extension, counts as downloadable. 401/403/404/5xx get clear messages.
 3. The download starts only on click, through `chrome.downloads.download()`. The file goes straight from the website to disk; nothing passes through the backend or JavaScript memory.
 
 Safety: http/https only, localhost / private / link-local IP literals and `.local`-style hosts blocked, final redirect URL re-checked, filenames sanitized with the extension kept, duplicate clicks and already-running URLs rejected.

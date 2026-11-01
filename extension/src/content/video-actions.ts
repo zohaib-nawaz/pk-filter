@@ -5,7 +5,7 @@ import type { VideoButton } from './video-button';
 
 export async function prepareDownload(button: VideoButton, url: string, title: string): Promise<MediaInfo | null> {
   button.onActivate(null);
-  button.set('checking', 'Checking whether this video can be downloaded…');
+  button.set('checking', 'Checking whether this file can be downloaded…');
   const info = await sendRequest({ type: 'inspect-media', url });
   if (!info) {
     button.set('unavailable', 'The extension is not available on this page');
@@ -23,6 +23,6 @@ export async function prepareDownload(button: VideoButton, url: string, title: s
     else button.set('error', `${result?.error ?? 'Could not start the download'}. Click to retry.`);
   };
   button.onActivate(() => void start());
-  button.set('ready', `Download video (${detail})`);
+  button.set('ready', `Download ${detail}`);
   return info;
 }
