@@ -55,7 +55,7 @@ function videosWanted(): boolean {
 function refreshVideos(): void {
   for (const entry of tracked) {
     entry.video?.remove();
-    entry.video = videosWanted() ? decorateVideoResult(entry.result) : null;
+    entry.video = videosWanted() ? decorateVideoResult(entry.result, settings.videoShowUnavailable) : null;
   }
 }
 
@@ -78,7 +78,7 @@ function scan(): void {
     const indicator = createIndicator();
     indicator.update('checking', null);
     result.heading.append(indicator.element);
-    const video = videosWanted() ? decorateVideoResult(result) : null;
+    const video = videosWanted() ? decorateVideoResult(result, settings.videoShowUnavailable) : null;
     tracked.push({ result, container: result.container, domain: result.domain, indicator, status: 'checking', video });
   }
   void check([...new Set(found.map((result) => result.domain))]);
@@ -140,7 +140,11 @@ async function start(): Promise<void> {
     else if (!previous.enabled) activate();
     else {
       applyFilter();
-      if (previous.videoDownloader !== next.videoDownloader || previous.videoOnGoogle !== next.videoOnGoogle) refreshVideos();
+      const videoChanged =
+        previous.videoDownloader !== next.videoDownloader ||
+        previous.videoOnGoogle !== next.videoOnGoogle ||
+        previous.videoShowUnavailable !== next.videoShowUnavailable;
+      if (videoChanged) refreshVideos();
     }
   });
   onRefreshRequested(recheckAll);

@@ -30,6 +30,7 @@ export interface Settings {
   videoDownloader: boolean;
   videoOnGoogle: boolean;
   videoOnPages: boolean;
+  videoShowUnavailable: boolean;
 }
 
 export interface SyncState {

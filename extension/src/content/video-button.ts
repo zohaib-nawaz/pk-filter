@@ -1,11 +1,14 @@
+import type { VideoUiState } from '../core/video-visibility';
+
 export const VIDEO_BUTTON_TAG = 'pkaf-video';
 
-export type VideoButtonState = 'checking' | 'ready' | 'unavailable' | 'starting' | 'started' | 'error';
+export type VideoButtonState = Exclude<VideoUiState, 'idle'>;
 export type VideoButtonVariant = 'inline' | 'overlay';
 
 export interface VideoButton {
   element: HTMLElement;
   set(state: VideoButtonState, message: string, label?: string): void;
+  state(): VideoUiState;
   onActivate(handler: (() => void) | null): void;
   remove(): void;
 }
@@ -55,7 +58,7 @@ button[data-state="checking"] svg, button[data-state="starting"] svg { animation
   :host([data-variant="inline"]) button[data-state="ready"] { color: #8ab4f8; }
 }`;
 
-export function createVideoButton(variant: VideoButtonVariant): VideoButton {
+export function createVideoButton(variant: VideoButtonVariant, onStateChange?: () => void): VideoButton {
   const host = document.createElement(VIDEO_BUTTON_TAG);
   host.dataset.variant = variant;
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -70,7 +73,7 @@ export function createVideoButton(variant: VideoButtonVariant): VideoButton {
   label.className = 'label';
   button.append(icon, label);
   shadow.append(style, button);
-  let state: VideoButtonState = 'checking';
+  let state: VideoUiState = 'idle';
   let handler: (() => void) | null = null;
 
   for (const type of ['mousedown', 'auxclick', 'pointerdown'] as const) {
@@ -82,7 +85,7 @@ export function createVideoButton(variant: VideoButtonVariant): VideoButton {
   host.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (ACTIVE_STATES.has(state)) handler?.();
+    if (state !== 'idle' && ACTIVE_STATES.has(state)) handler?.();
   });
 
   return {
@@ -95,7 +98,9 @@ export function createVideoButton(variant: VideoButtonVariant): VideoButton {
       button.title = message;
       button.setAttribute('aria-label', message);
       button.disabled = !ACTIVE_STATES.has(next) && next !== 'unavailable';
+      onStateChange?.();
     },
+    state: () => state,
     onActivate(next) {
       handler = next;
     },

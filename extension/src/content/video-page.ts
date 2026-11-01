@@ -1,5 +1,6 @@
 import { describeSource, sourceKind } from '../core/media';
 import { titleFromUrl } from '../core/filename';
+import { isVideoButtonShown } from '../core/video-visibility';
 import type { MediaInfo, PageVideo, Settings } from '../core/types';
 import { sendRequest } from '../shared/messaging';
 import { loadSettings, onSettingsChanged } from '../shared/storage';
@@ -39,6 +40,7 @@ let reportTimer: number | undefined;
 let lastReport = '';
 let frame = 0;
 let active = false;
+let showUnavailable = false;
 let retired = false;
 
 function isWanted(settings: Settings): boolean {
@@ -102,7 +104,12 @@ function position(): void {
   frame = 0;
   for (const [video, tracked] of videos) {
     const rect = video.getBoundingClientRect();
-    const show = tracked.visible && rect.width >= MIN_WIDTH && rect.height >= MIN_HEIGHT && !document.fullscreenElement;
+    const show =
+      tracked.visible &&
+      rect.width >= MIN_WIDTH &&
+      rect.height >= MIN_HEIGHT &&
+      !document.fullscreenElement &&
+      isVideoButtonShown(tracked.button.state(), showUnavailable);
     tracked.button.element.toggleAttribute('data-visible', show);
     if (!show) continue;
     tracked.button.element.style.left = `${Math.round(rect.right - 44)}px`;
@@ -115,7 +122,7 @@ function schedulePosition(): void {
 }
 
 function trackVideo(video: HTMLVideoElement): void {
-  const button = createVideoButton('overlay');
+  const button = createVideoButton('overlay', schedulePosition);
   const tracked: TrackedVideo = { button, source: null, visible: false, listeners: new AbortController(), media: null };
   videos.set(video, tracked);
   document.body.append(button.element);
@@ -124,9 +131,14 @@ function trackVideo(video: HTMLVideoElement): void {
   evaluate(video, tracked);
 }
 
+function applyLinkVisibility(button: VideoButton): void {
+  button.element.style.display = isVideoButtonShown(button.state(), showUnavailable) ? '' : 'none';
+}
+
 function trackLink(link: HTMLAnchorElement): void {
   if (sourceKind(link.href) !== 'direct') return;
-  const button = createVideoButton('inline');
+  const button: VideoButton = createVideoButton('inline', () => applyLinkVisibility(button));
+  applyLinkVisibility(button);
   const tracked: TrackedLink = { button, media: null };
   links.set(link, tracked);
   link.insertAdjacentElement('afterend', button.element);
@@ -234,8 +246,18 @@ async function start(): Promise<void> {
     },
     { once: true },
   );
-  if (isWanted(await loadSettings())) activate();
-  stopListening = onSettingsChanged((settings) => (isWanted(settings) ? activate() : deactivate()));
+  const applySettings = (settings: Settings) => {
+    showUnavailable = settings.videoShowUnavailable;
+    if (!isWanted(settings)) {
+      deactivate();
+      return;
+    }
+    activate();
+    for (const tracked of links.values()) applyLinkVisibility(tracked.button);
+    schedulePosition();
+  };
+  applySettings(await loadSettings());
+  stopListening = onSettingsChanged(applySettings);
 }
 
 void start();

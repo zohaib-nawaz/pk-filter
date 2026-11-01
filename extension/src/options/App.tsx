@@ -76,6 +76,12 @@ export function App() {
             description="Detects videos on the pages you open and adds a download icon"
             onChange={(videoOnPages) => void update({ videoOnPages })}
           />
+          <Switch
+            checked={settings.videoShowUnavailable}
+            label="Show not-downloadable icons"
+            description="Also mark streaming and DRM videos (Facebook, YouTube, reels) with a grey icon"
+            onChange={(videoShowUnavailable) => void update({ videoShowUnavailable })}
+          />
         </div>
       </Section>
 

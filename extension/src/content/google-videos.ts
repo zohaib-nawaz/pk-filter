@@ -12,7 +12,7 @@ function hasDuration(container: HTMLElement): boolean {
   return false;
 }
 
-export function decorateVideoResult(result: SearchResult): VideoButton | null {
+export function decorateVideoResult(result: SearchResult, showUnavailable: boolean): VideoButton | null {
   const href = result.anchor.href;
   const kind = sourceKind(href);
   if (kind === 'direct') {
@@ -21,7 +21,7 @@ export function decorateVideoResult(result: SearchResult): VideoButton | null {
     void prepareDownload(button, href, result.title);
     return button;
   }
-  if (kind === 'streaming' || isStreamingPlatform(result.domain) || hasDuration(result.container)) {
+  if (showUnavailable && (kind === 'streaming' || isStreamingPlatform(result.domain) || hasDuration(result.container))) {
     const button = createVideoButton('inline');
     button.set('unavailable', STREAMING_MESSAGE, 'Streaming only');
     result.heading.append(button.element);

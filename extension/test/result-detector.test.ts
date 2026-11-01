@@ -39,8 +39,11 @@ describe('decorateVideoResult', () => {
     document.body.innerHTML = `<div id="search"><div data-hveid="1"><a href="/goto?url=x"><h3>Clip</h3><div><span class="VuuXrf">YouTube · Channel</span><cite>youtube.com</cite></div></a></div>
       <div data-hveid="2"><a href="https://www.dawn.com/news"><h3>News</h3><cite>https://www.dawn.com</cite></a></div></div>`;
     const results = claimResults(document, 'https://www.google.com');
-    const buttons = results.map(decorateVideoResult);
+    const buttons = results.map((result) => decorateVideoResult(result, true));
     expect(buttons[0]).not.toBeNull();
     expect(buttons[1]).toBeNull();
+    releaseAll(document);
+    for (const element of document.querySelectorAll('pkaf-video')) element.remove();
+    expect(claimResults(document, 'https://www.google.com').map((result) => decorateVideoResult(result, false))).toEqual([null, null]);
   });
 });

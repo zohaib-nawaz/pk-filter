@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS: Settings = {
   videoDownloader: false,
   videoOnGoogle: true,
   videoOnPages: true,
+  videoShowUnavailable: false,
 };
 
 export const FILTER_MODES: Array<{ value: FilterMode; label: string; hint: string }> = [
@@ -40,5 +41,6 @@ export function sanitizeSettings(input: unknown): Settings {
     videoDownloader: flag(raw.videoDownloader, DEFAULT_SETTINGS.videoDownloader),
     videoOnGoogle: flag(raw.videoOnGoogle, DEFAULT_SETTINGS.videoOnGoogle),
     videoOnPages: flag(raw.videoOnPages, DEFAULT_SETTINGS.videoOnPages),
+    videoShowUnavailable: flag(raw.videoShowUnavailable, DEFAULT_SETTINGS.videoShowUnavailable),
   };
 }

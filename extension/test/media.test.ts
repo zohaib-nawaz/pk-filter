@@ -89,3 +89,13 @@ describe('download views', () => {
     expect(formatBytes(null)).toBe('Unknown size');
   });
 });
+
+describe('video icon visibility', () => {
+  it('shows only useful icons unless grey icons are enabled', async () => {
+    const { isVideoButtonShown } = await import('../src/core/video-visibility');
+    expect(['idle', 'checking', 'unavailable'].map((state) => isVideoButtonShown(state as 'idle', false))).toEqual([false, false, false]);
+    expect(['ready', 'starting', 'started', 'error'].map((state) => isVideoButtonShown(state as 'ready', false))).toEqual([true, true, true, true]);
+    expect(isVideoButtonShown('unavailable', true)).toBe(true);
+    expect(isVideoButtonShown('idle', true)).toBe(false);
+  });
+});

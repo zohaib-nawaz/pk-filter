@@ -42,6 +42,7 @@ Off by default. Turn it on in **Settings → Video downloader**; Chrome then ask
 | Enable video downloader | Master switch, requests/removes permissions |
 | Icons on Google results | Download pill for direct video links; "Streaming only" tag for YouTube/Vimeo/TikTok-style results |
 | Icons on video pages | Registers `video.js` on all sites; adds a download icon on `<video>` players and direct video links |
+| Show not-downloadable icons | Off by default. When on, streaming/DRM videos and Google streaming results get a grey icon explaining why they can't be downloaded |
 
 How a video is judged:
 
