@@ -15,6 +15,7 @@ interface TrackedVideo {
   listeners: AbortController;
   media: PageVideo | null;
   fallback: string | null;
+  thumbnail: string | null;
 }
 
 interface TrackedInline {
@@ -23,15 +24,21 @@ interface TrackedInline {
 }
 
 const TAKEOVER_EVENT = 'pkaf-video-takeover';
-const MAX_VIDEOS = 12;
+const MAX_OVERLAYS = 40;
 const MAX_INLINE = 30;
 const MIN_WIDTH = 160;
 const MIN_HEIGHT = 90;
+const ICON_SIZE = 32;
+const ICON_INSET = 10;
+const PLACEMENT_STEP = 24;
+const PLACEMENT_TRIES = 8;
 const SCAN_DEBOUNCE_MS = 800;
 const REPORT_DEBOUNCE_MS = 300;
 const LINK_SELECTOR = MEDIA_LINK_EXTENSIONS.flatMap((ext) => [`a[href$=".${ext}" i]`, `a[href*=".${ext}?" i]`]).join(',');
+const THUMBNAIL_XPATH = `//*[@*[${MEDIA_LINK_EXTENSIONS.map((ext) => `contains(., '.${ext}')`).join(' or ')}]]`;
+const NOT_THUMBNAILS = new Set(['A', 'VIDEO', 'AUDIO', 'SOURCE', 'META', 'LINK', 'SCRIPT', 'IFRAME', 'TRACK']);
 
-const videos = new Map<HTMLVideoElement, TrackedVideo>();
+const videos = new Map<Element, TrackedVideo>();
 const inline = new Map<Element, TrackedInline>();
 const usedFallbacks = new Set<string>();
 let observer: MutationObserver | null = null;
@@ -89,6 +96,39 @@ function scheduleReport(): void {
   reportTimer = window.setTimeout(report, REPORT_DEBOUNCE_MS);
 }
 
+function qualityRank(name: string): number {
+  if (/large|hd|high|full|original/i.test(name)) return 3;
+  if (/medium/i.test(name)) return 2;
+  if (/small|thumb|preview|low/i.test(name)) return 0;
+  return 1;
+}
+
+function thumbnailSource(element: Element): string | null {
+  const candidates = [...element.attributes]
+    .filter((attribute) => attribute.name.startsWith('data-') && sourceKind(attribute.value.trim(), location.href) === 'direct')
+    .sort((a, b) => qualityRank(b.name) - qualityRank(a.name));
+  const best = candidates[0];
+  return best ? new URL(best.value.trim(), location.href).toString() : null;
+}
+
+function insideTrackedThumbnail(element: Element): boolean {
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    if (videos.get(parent)?.thumbnail) return true;
+  }
+  return false;
+}
+
+function inspectThumbnail(tracked: TrackedVideo): void {
+  if (!tracked.thumbnail || tracked.source === tracked.thumbnail) return;
+  const url = tracked.thumbnail;
+  tracked.source = url;
+  const title = document.title || titleFromUrl(url);
+  void prepareDownload(tracked.button, url, title).then((info) => {
+    tracked.media = toPageVideo(info, title);
+    scheduleReport();
+  });
+}
+
 function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
   const sources = mediaSources(video);
   const signature = sources.join('|') || null;
@@ -116,6 +156,22 @@ function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
   });
 }
 
+function isUncovered(element: Element, x: number, y: number): boolean {
+  const topmost = document.elementsFromPoint(x, y).find((node) => node.tagName !== VIDEO_BUTTON_TAG.toUpperCase());
+  return !!topmost && (topmost === element || element.contains(topmost));
+}
+
+function iconTop(element: Element, rect: DOMRect): number {
+  const start = Math.max(rect.top, 0) + ICON_INSET;
+  const x = rect.right - ICON_INSET - ICON_SIZE / 2;
+  for (let attempt = 0; attempt < PLACEMENT_TRIES; attempt += 1) {
+    const top = start + attempt * PLACEMENT_STEP;
+    if (top + ICON_SIZE > rect.bottom) break;
+    if (isUncovered(element, x, top + ICON_SIZE / 2)) return top;
+  }
+  return start;
+}
+
 function position(): void {
   frame = 0;
   for (const [video, tracked] of videos) {
@@ -128,8 +184,8 @@ function position(): void {
       isVideoButtonShown(tracked.button.state(), showUnavailable);
     tracked.button.element.toggleAttribute('data-visible', show);
     if (!show) continue;
-    tracked.button.element.style.left = `${Math.round(rect.right - 44)}px`;
-    tracked.button.element.style.top = `${Math.round(Math.max(rect.top, 0) + 10)}px`;
+    tracked.button.element.style.left = `${Math.round(rect.right - ICON_INSET - ICON_SIZE)}px`;
+    tracked.button.element.style.top = `${Math.round(iconTop(video, rect))}px`;
   }
 }
 
@@ -146,12 +202,40 @@ function trackVideo(video: HTMLVideoElement): void {
     listeners: new AbortController(),
     media: null,
     fallback: null,
+    thumbnail: null,
   };
   videos.set(video, tracked);
   document.body.append(button.element);
   video.addEventListener('loadedmetadata', () => evaluate(video, tracked), { signal: tracked.listeners.signal });
   intersection?.observe(video);
   evaluate(video, tracked);
+}
+
+function trackThumbnail(element: Element, url: string): void {
+  const button = createVideoButton('overlay', schedulePosition);
+  const tracked: TrackedVideo = {
+    button,
+    source: null,
+    visible: false,
+    listeners: new AbortController(),
+    media: null,
+    fallback: null,
+    thumbnail: url,
+  };
+  videos.set(element, tracked);
+  document.body.append(button.element);
+  intersection?.observe(element);
+}
+
+function scanThumbnails(): void {
+  const found = document.evaluate(THUMBNAIL_XPATH, document.body, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+  for (let index = 0; index < found.snapshotLength && videos.size < MAX_OVERLAYS; index += 1) {
+    const element = found.snapshotItem(index) as Element | null;
+    if (!element || NOT_THUMBNAILS.has(element.tagName) || videos.has(element) || insideTrackedThumbnail(element)) continue;
+    if ([...videos.keys()].some((tracked) => element.contains(tracked))) continue;
+    const url = thumbnailSource(element);
+    if (url) trackThumbnail(element, url);
+  }
 }
 
 function applyInlineVisibility(button: VideoButton): void {
@@ -180,7 +264,7 @@ function trackAudio(audio: HTMLAudioElement): void {
   if (url) trackInline(audio, url, document.title || titleFromUrl(url));
 }
 
-function forgetVideo(video: HTMLVideoElement, tracked: TrackedVideo): void {
+function forgetVideo(video: Element, tracked: TrackedVideo): void {
   tracked.listeners.abort();
   tracked.button.remove();
   intersection?.unobserve(video);
@@ -203,9 +287,10 @@ function forgetDetached(): void {
 
 function scan(): void {
   forgetDetached();
+  scanThumbnails();
   for (const video of document.querySelectorAll('video')) {
-    if (videos.size >= MAX_VIDEOS) break;
-    if (!videos.has(video)) trackVideo(video);
+    if (videos.size >= MAX_OVERLAYS) break;
+    if (!videos.has(video) && !insideTrackedThumbnail(video)) trackVideo(video);
   }
   for (const audio of document.querySelectorAll('audio')) {
     if (inline.size >= MAX_INLINE) break;
@@ -232,8 +317,10 @@ function activate(): void {
   active = true;
   intersection = new IntersectionObserver((entries) => {
     for (const entry of entries) {
-      const tracked = videos.get(entry.target as HTMLVideoElement);
-      if (tracked) tracked.visible = entry.isIntersecting;
+      const tracked = videos.get(entry.target);
+      if (!tracked) continue;
+      tracked.visible = entry.isIntersecting;
+      if (entry.isIntersecting) inspectThumbnail(tracked);
     }
     schedulePosition();
   });

@@ -23,7 +23,10 @@ function installChrome(messages: Message[]) {
   vi.stubGlobal(
     'IntersectionObserver',
     class {
-      observe() {}
+      constructor(private readonly callback: (entries: Array<{ target: Element; isIntersecting: boolean }>) => void) {}
+      observe(target: Element) {
+        queueMicrotask(() => this.callback([{ target, isIntersecting: true }]));
+      }
       unobserve() {}
       disconnect() {}
     },
@@ -76,5 +79,29 @@ describe('video page detection', () => {
     document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
     expect(document.querySelectorAll('pkaf-video')).toHaveLength(0);
     expect(messages.filter((m) => m.type === 'page-videos').at(-1)?.videos).toEqual([]);
+  });
+
+  it('puts one download icon on a video thumbnail, preferring the large file', async () => {
+    document.head.innerHTML = '';
+    document.body.innerHTML = `
+      <div class="shot" data-video-teaser-small="https://cdn.example.com/small-1.mp4" data-video-teaser-large="https://cdn.example.com/large-1.mp4">
+        <img src="https://cdn.example.com/still.png" data-animated-url="https://cdn.example.com/anim-1.mp4">
+      </div>
+      <div class="plain" data-id="7"><img src="https://cdn.example.com/photo.png"></div>`;
+    const messages: Message[] = [];
+    installChrome(messages);
+    await import('../src/content/video-page');
+    await vi.waitFor(() => expect(messages.some((m) => m.type === 'page-videos')).toBe(true), { timeout: 2000 });
+    expect(messages.filter((m) => m.type === 'inspect-media').map((m) => m.url)).toEqual(['https://cdn.example.com/large-1.mp4']);
+    expect(messages.filter((m) => m.type === 'page-videos').at(-1)?.videos?.map((video) => video.url)).toEqual(['https://cdn.example.com/large-1.mp4']);
+    expect(document.querySelectorAll('pkaf-video')).toHaveLength(1);
+
+    const hoverVideo = document.createElement('video');
+    hoverVideo.src = 'https://cdn.example.com/large-1.mp4';
+    document.querySelector('.shot')?.append(hoverVideo);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(document.querySelectorAll('pkaf-video')).toHaveLength(1);
+
+    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
   });
 });

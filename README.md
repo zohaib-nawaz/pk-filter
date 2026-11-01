@@ -44,7 +44,7 @@ Off by default. Turn it on in **Settings → Video downloader**; Chrome then ask
 | Icons on video pages | Registers `video.js` on all sites; adds a download icon on `<video>` players and direct video links |
 | Show not-downloadable icons | Off by default. When on, streaming/DRM videos and Google streaming results get a grey icon explaining why they can't be downloaded |
 
-Supported files: video MP4, M4V, WebM, MOV, OGV, MKV, AVI, FLV, 3GP, MPEG/MPG, TS, WMV, and audio MP3, M4A, AAC, OGG/OGA, Opus, WAV, FLAC, WEBA. Sources: `<video>` and `<audio>` players, links to media files, and the page's own published file (`og:video`, `og:audio`, `twitter:player:stream`, or schema.org `VideoObject`/`AudioObject` `contentUrl`).
+Supported files: video MP4, M4V, WebM, MOV, OGV, MKV, AVI, FLV, 3GP, MPEG/MPG, TS, WMV, and audio MP3, M4A, AAC, OGG/OGA, Opus, WAV, FLAC, WEBA. Sources: `<video>` and `<audio>` players, video thumbnails that carry a media file in a `data-*` attribute (for example Dribbble's `data-video-teaser-large`; the largest variant wins and it is only checked once the thumbnail scrolls into view), links to media files, and the page's own published file (`og:video`, `og:audio`, `twitter:player:stream`, or schema.org `VideoObject`/`AudioObject` `contentUrl`).
 
 How a file is judged:
 
