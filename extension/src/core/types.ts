@@ -81,3 +81,10 @@ export interface DownloadView {
   error: string | null;
   fileExists: boolean;
 }
+
+export interface PageVideo {
+  url: string;
+  title: string;
+  extension: string;
+  sizeBytes: number | null;
+}

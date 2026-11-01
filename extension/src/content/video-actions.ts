@@ -1,18 +1,19 @@
 import { formatBytes } from '../core/download-errors';
 import { sendRequest } from '../shared/messaging';
+import type { MediaInfo } from '../core/types';
 import type { VideoButton } from './video-button';
 
-export async function prepareDownload(button: VideoButton, url: string, title: string): Promise<void> {
+export async function prepareDownload(button: VideoButton, url: string, title: string): Promise<MediaInfo | null> {
   button.onActivate(null);
   button.set('checking', 'Checking whether this video can be downloaded…');
   const info = await sendRequest({ type: 'inspect-media', url });
   if (!info) {
     button.set('unavailable', 'The extension is not available on this page');
-    return;
+    return null;
   }
   if (info.status !== 'downloadable' || !info.extension) {
     button.set('unavailable', info.reason, info.status === 'streaming' ? 'Streaming only' : undefined);
-    return;
+    return null;
   }
   const detail = `${info.extension.toUpperCase()}, ${formatBytes(info.sizeBytes)}`;
   const start = async () => {
@@ -23,4 +24,5 @@ export async function prepareDownload(button: VideoButton, url: string, title: s
   };
   button.onActivate(() => void start());
   button.set('ready', `Download video (${detail})`);
+  return info;
 }

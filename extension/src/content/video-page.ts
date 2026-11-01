@@ -1,6 +1,7 @@
 import { describeSource, sourceKind } from '../core/media';
 import { titleFromUrl } from '../core/filename';
-import type { Settings } from '../core/types';
+import type { MediaInfo, PageVideo, Settings } from '../core/types';
+import { sendRequest } from '../shared/messaging';
 import { loadSettings, onSettingsChanged } from '../shared/storage';
 import { prepareDownload } from './video-actions';
 import { createVideoButton, VIDEO_BUTTON_TAG, type VideoButton } from './video-button';
@@ -10,6 +11,12 @@ interface TrackedVideo {
   source: string | null;
   visible: boolean;
   listeners: AbortController;
+  media: PageVideo | null;
+}
+
+interface TrackedLink {
+  button: VideoButton;
+  media: PageVideo | null;
 }
 
 const TAKEOVER_EVENT = 'pkaf-video-takeover';
@@ -18,15 +25,18 @@ const MAX_LINKS = 30;
 const MIN_WIDTH = 160;
 const MIN_HEIGHT = 90;
 const SCAN_DEBOUNCE_MS = 800;
+const REPORT_DEBOUNCE_MS = 300;
 const LINK_SELECTOR = ['mp4', 'webm', 'mov', 'm4v']
   .flatMap((ext) => [`a[href$=".${ext}" i]`, `a[href*=".${ext}?" i]`])
   .join(',');
 
 const videos = new Map<HTMLVideoElement, TrackedVideo>();
-const links = new Map<HTMLAnchorElement, VideoButton>();
+const links = new Map<HTMLAnchorElement, TrackedLink>();
 let observer: MutationObserver | null = null;
 let intersection: IntersectionObserver | null = null;
 let scanTimer: number | undefined;
+let reportTimer: number | undefined;
+let lastReport = '';
 let frame = 0;
 let active = false;
 let retired = false;
@@ -40,11 +50,35 @@ function videoSources(video: HTMLVideoElement): string[] {
   return [...new Set(sources.filter(Boolean))];
 }
 
+function toPageVideo(info: MediaInfo | null, title: string): PageVideo | null {
+  if (!info?.extension) return null;
+  return { url: info.url, title, extension: info.extension, sizeBytes: info.sizeBytes };
+}
+
+function report(): void {
+  const found = new Map<string, PageVideo>();
+  for (const item of [...videos.values(), ...links.values()]) {
+    if (item.media && !found.has(item.media.url)) found.set(item.media.url, item.media);
+  }
+  const list = [...found.values()];
+  const signature = list.map((video) => video.url).join('|');
+  if (signature === lastReport) return;
+  lastReport = signature;
+  void sendRequest({ type: 'page-videos', videos: list });
+}
+
+function scheduleReport(): void {
+  window.clearTimeout(reportTimer);
+  reportTimer = window.setTimeout(report, REPORT_DEBOUNCE_MS);
+}
+
 function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
   const sources = videoSources(video);
   const signature = sources.join('|') || null;
   if (signature === tracked.source) return;
   tracked.source = signature;
+  tracked.media = null;
+  scheduleReport();
   if (video.mediaKeys) {
     tracked.button.set('unavailable', 'This video is DRM-protected and cannot be downloaded');
     return;
@@ -52,7 +86,12 @@ function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
   const kinds = sources.map((source) => ({ source, kind: sourceKind(source, location.href) }));
   const candidate = kinds.find((item) => item.kind === 'direct') ?? kinds.find((item) => item.kind === 'unknown');
   if (candidate) {
-    void prepareDownload(tracked.button, new URL(candidate.source, location.href).toString(), document.title || titleFromUrl(candidate.source));
+    const title = document.title || titleFromUrl(candidate.source);
+    void prepareDownload(tracked.button, new URL(candidate.source, location.href).toString(), title).then((info) => {
+      if (tracked.source !== signature) return;
+      tracked.media = toPageVideo(info, title);
+      scheduleReport();
+    });
     return;
   }
   const streamed = kinds.find((item) => item.kind === 'blob' || item.kind === 'streaming');
@@ -77,7 +116,7 @@ function schedulePosition(): void {
 
 function trackVideo(video: HTMLVideoElement): void {
   const button = createVideoButton('overlay');
-  const tracked: TrackedVideo = { button, source: null, visible: false, listeners: new AbortController() };
+  const tracked: TrackedVideo = { button, source: null, visible: false, listeners: new AbortController(), media: null };
   videos.set(video, tracked);
   document.body.append(button.element);
   video.addEventListener('loadedmetadata', () => evaluate(video, tracked), { signal: tracked.listeners.signal });
@@ -88,10 +127,14 @@ function trackVideo(video: HTMLVideoElement): void {
 function trackLink(link: HTMLAnchorElement): void {
   if (sourceKind(link.href) !== 'direct') return;
   const button = createVideoButton('inline');
-  links.set(link, button);
+  const tracked: TrackedLink = { button, media: null };
+  links.set(link, tracked);
   link.insertAdjacentElement('afterend', button.element);
   const title = link.textContent?.trim() || titleFromUrl(link.href);
-  void prepareDownload(button, link.href, title);
+  void prepareDownload(button, link.href, title).then((info) => {
+    tracked.media = toPageVideo(info, title);
+    scheduleReport();
+  });
 }
 
 function forgetVideo(video: HTMLVideoElement, tracked: TrackedVideo): void {
@@ -99,16 +142,18 @@ function forgetVideo(video: HTMLVideoElement, tracked: TrackedVideo): void {
   tracked.button.remove();
   intersection?.unobserve(video);
   videos.delete(video);
+  scheduleReport();
 }
 
 function forgetDetached(): void {
   for (const [video, tracked] of videos) {
     if (!video.isConnected) forgetVideo(video, tracked);
   }
-  for (const [link, button] of links) {
+  for (const [link, tracked] of links) {
     if (link.isConnected) continue;
-    button.remove();
+    tracked.button.remove();
     links.delete(link);
+    scheduleReport();
   }
 }
 
@@ -166,8 +211,10 @@ function deactivate(): void {
   window.removeEventListener('resize', schedulePosition);
   document.removeEventListener('fullscreenchange', schedulePosition);
   for (const [video, tracked] of videos) forgetVideo(video, tracked);
-  for (const button of links.values()) button.remove();
+  for (const tracked of links.values()) tracked.button.remove();
   links.clear();
+  window.clearTimeout(reportTimer);
+  report();
 }
 
 async function start(): Promise<void> {

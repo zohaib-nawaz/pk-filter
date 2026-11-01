@@ -7,16 +7,6 @@ import { inspectMedia } from './media-inspector';
 const starting = new Set<string>();
 let watching = false;
 
-async function updateBadge(): Promise<void> {
-  if (!chrome.downloads) return;
-  const records = await readDownloadRecords();
-  const active = await chrome.downloads.search({ state: 'in_progress' });
-  const ids = new Set(records.map((record) => record.id));
-  const count = active.filter((item) => ids.has(item.id)).length;
-  await chrome.action.setBadgeBackgroundColor({ color: '#188038' });
-  await chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
-}
-
 function notify(id: number, title: string, message: string): void {
   chrome.notifications?.create(`pkaf-download-${id}`, {
     type: 'basic',
@@ -30,7 +20,6 @@ async function handleChange(delta: chrome.downloads.DownloadDelta): Promise<void
   if (!delta.state?.current) return;
   const record = (await readDownloadRecords()).find((item) => item.id === delta.id);
   if (!record) return;
-  await updateBadge();
   if (delta.state.current === 'complete') notify(record.id, 'Download complete', record.title);
   if (delta.state.current === 'interrupted') {
     const [item] = await chrome.downloads.search({ id: delta.id });
@@ -42,8 +31,6 @@ export function watchDownloads(): void {
   if (watching || !chrome.downloads) return;
   watching = true;
   chrome.downloads.onChanged.addListener((delta) => void handleChange(delta));
-  chrome.downloads.onCreated.addListener(() => void updateBadge());
-  void updateBadge();
 }
 
 export async function startDownload(rawUrl: string, title: string): Promise<DownloadResult> {
@@ -71,7 +58,6 @@ export async function startDownload(rawUrl: string, title: string): Promise<Down
       startedAt: new Date().toISOString(),
     });
     watchDownloads();
-    void updateBadge();
     return { ok: true, id };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Chrome could not start the download' };

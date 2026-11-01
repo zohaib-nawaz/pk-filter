@@ -51,6 +51,8 @@ How a video is judged:
 
 Safety: http/https only, localhost / private / link-local IP literals and `.local`-style hosts blocked, final redirect URL re-checked, filenames sanitized with the extension kept, duplicate clicks and already-running URLs rejected.
 
+When a page has downloadable videos, the extension icon shows how many (1, 2, 3…) for that tab, and opening the popup jumps to a **Videos (N)** list with a Download button per video. The count updates as videos appear or disappear and clears when the tab navigates or closes.
+
 Popup → **Downloads** tab shows title, format, size, progress and status, with Pause, Resume, Cancel, Retry, Open and Show in folder. Chrome keeps the real download state, so it survives service-worker restarts and browser restarts; interrupted downloads offer Resume when the server supports it, otherwise Retry.
 
 Performance: Google results render first; cached accessibility results are applied straight away (`lookup`), only new domains go to the backend in batches (`check`). Video checks run on demand, at most 3 at a time, and are cached for 10 minutes.
