@@ -16,9 +16,9 @@ export function useVideoDownloader(settings: Settings | null, update: (patch: Pa
   const setEnabled = async (enabled: boolean) => {
     setError(null);
     if (enabled) {
-      const granted = await requestDownloaderPermissions();
-      if (!granted) {
-        setError('Chrome permission was not granted, so the downloader stays off.');
+      const permission = await requestDownloaderPermissions();
+      if (!permission.granted) {
+        setError(`${permission.error} The downloader stays off.`);
         return;
       }
       await update({ videoDownloader: true });

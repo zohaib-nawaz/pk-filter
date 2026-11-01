@@ -50,9 +50,9 @@ async function handle(request: Request): Promise<ResponseMap[Request['type']]> {
   }
 }
 
-function syncDownloader(): void {
+function syncDownloader(reinject = false): void {
   watchDownloads();
-  void syncVideoSites().catch(() => undefined);
+  void syncVideoSites(reinject).catch(() => undefined);
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
@@ -63,10 +63,10 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   return true;
 });
 
-chrome.permissions.onAdded.addListener(syncDownloader);
-chrome.permissions.onRemoved.addListener(syncDownloader);
-chrome.runtime.onStartup.addListener(syncDownloader);
-chrome.runtime.onInstalled.addListener(syncDownloader);
+chrome.permissions.onAdded.addListener(() => syncDownloader());
+chrome.permissions.onRemoved.addListener(() => syncDownloader());
+chrome.runtime.onStartup.addListener(() => syncDownloader());
+chrome.runtime.onInstalled.addListener(() => syncDownloader(true));
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync' && changes.settings) syncDownloader();
 });

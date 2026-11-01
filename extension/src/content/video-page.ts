@@ -12,6 +12,7 @@ interface TrackedVideo {
   listeners: AbortController;
 }
 
+const TAKEOVER_EVENT = 'pkaf-video-takeover';
 const MAX_VIDEOS = 12;
 const MAX_LINKS = 30;
 const MIN_WIDTH = 160;
@@ -28,6 +29,7 @@ let intersection: IntersectionObserver | null = null;
 let scanTimer: number | undefined;
 let frame = 0;
 let active = false;
+let retired = false;
 
 function isWanted(settings: Settings): boolean {
   return settings.videoDownloader && settings.videoOnPages;
@@ -133,7 +135,7 @@ function isOwnMutation(mutation: MutationRecord): boolean {
 }
 
 function activate(): void {
-  if (active) return;
+  if (active || retired) return;
   active = true;
   intersection = new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -170,8 +172,23 @@ function deactivate(): void {
 
 async function start(): Promise<void> {
   if (!document.body) return;
+  document.dispatchEvent(new CustomEvent(TAKEOVER_EVENT));
+  let stopListening = () => {};
+  document.addEventListener(
+    TAKEOVER_EVENT,
+    () => {
+      retired = true;
+      deactivate();
+      try {
+        stopListening();
+      } catch {
+        return;
+      }
+    },
+    { once: true },
+  );
   if (isWanted(await loadSettings())) activate();
-  onSettingsChanged((settings) => (isWanted(settings) ? activate() : deactivate()));
+  stopListening = onSettingsChanged((settings) => (isWanted(settings) ? activate() : deactivate()));
 }
 
 void start();
