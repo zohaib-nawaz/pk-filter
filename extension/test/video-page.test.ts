@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-type Message = { type: string; url?: string; videos?: Array<{ url: string }> };
+type Message = { type: string; url?: string; videos?: Array<{ url: string; title?: string }> };
 
 function installChrome(messages: Message[], extra: Record<string, unknown> = {}) {
   const settings = { videoDownloader: true, videoOnPages: true, ...extra };
@@ -87,9 +87,10 @@ describe('video page detection', () => {
   it('puts one download icon on a video thumbnail, preferring the large file', async () => {
     document.head.innerHTML = '';
     document.body.innerHTML = `
+      <li class="card"><div class="shot-title">Animated onboarding flow</div>
       <div class="shot" data-video-teaser-small="https://cdn.example.com/small-1.mp4" data-video-teaser-large="https://cdn.example.com/large-1.mp4">
         <img src="https://cdn.example.com/still.png" data-animated-url="https://cdn.example.com/anim-1.mp4">
-      </div>
+      </div></li>
       <div class="plain" data-id="7"><img src="https://cdn.example.com/photo.png"></div>`;
     const messages: Message[] = [];
     installChrome(messages);
@@ -97,6 +98,7 @@ describe('video page detection', () => {
     await vi.waitFor(() => expect(messages.some((m) => m.type === 'page-videos')).toBe(true), { timeout: 2000 });
     expect(messages.filter((m) => m.type === 'inspect-media').map((m) => m.url)).toEqual(['https://cdn.example.com/large-1.mp4']);
     expect(messages.filter((m) => m.type === 'page-videos').at(-1)?.videos?.map((video) => video.url)).toEqual(['https://cdn.example.com/large-1.mp4']);
+    expect(messages.filter((m) => m.type === 'page-videos').at(-1)?.videos?.[0]).toMatchObject({ title: 'Animated onboarding flow' });
     expect(document.querySelectorAll('pkaf-video')).toHaveLength(1);
 
     const hoverVideo = document.createElement('video');

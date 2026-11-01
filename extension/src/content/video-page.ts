@@ -1,10 +1,10 @@
 import { matchesStreamDomain } from '../core/hls';
 import { describeSource, extensionFromPath, MEDIA_LINK_EXTENSIONS, safeHttpUrl, sourceKind } from '../core/media';
-import { titleFromUrl } from '../core/filename';
 import { isVideoButtonShown } from '../core/video-visibility';
 import type { MediaInfo, PageVideo, Settings } from '../core/types';
 import { sendRequest } from '../shared/messaging';
 import { loadSettings, onSettingsChanged } from '../shared/storage';
+import { linkTitle, mediaTitle } from './media-title';
 import { metadataMediaSources } from './page-metadata';
 import { prepareDownload } from './video-actions';
 import { createVideoButton, VIDEO_BUTTON_TAG, type VideoButton } from './video-button';
@@ -144,6 +144,11 @@ function scheduleReport(): void {
   reportTimer = window.setTimeout(report, REPORT_DEBOUNCE_MS);
 }
 
+function otherMediaThan(self: Element): (candidate: Element) => boolean {
+  return (candidate) =>
+    [...videos.keys(), ...inline.keys()].some((tracked) => tracked !== self && (tracked === candidate || tracked.contains(candidate)));
+}
+
 function qualityRank(name: string): number {
   if (/large|hd|high|full|original/i.test(name)) return 3;
   if (/medium/i.test(name)) return 2;
@@ -166,11 +171,11 @@ function insideTrackedThumbnail(element: Element): boolean {
   return false;
 }
 
-function inspectThumbnail(tracked: TrackedVideo): void {
+function inspectThumbnail(element: Element, tracked: TrackedVideo): void {
   if (!tracked.thumbnail || tracked.source === tracked.thumbnail) return;
   const url = tracked.thumbnail;
   tracked.source = url;
-  const title = document.title || titleFromUrl(url);
+  const title = mediaTitle(element, url, otherMediaThan(element));
   void prepareDownload(tracked.button, url, title).then((info) => {
     tracked.media = toPageVideo(info, title);
     scheduleReport();
@@ -197,7 +202,7 @@ function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
     tracked.button.set('unavailable', describeSource(streamed ?? 'invalid'));
     return;
   }
-  const title = document.title || titleFromUrl(url);
+  const title = mediaTitle(video, url, otherMediaThan(video));
   void prepareDownload(tracked.button, url, title).then((info) => {
     if (tracked.source !== signature) return;
     tracked.media = toPageVideo(info, title);
@@ -323,12 +328,12 @@ function trackInline(element: Element, url: string, title: string): void {
 
 function trackLink(link: HTMLAnchorElement): void {
   if (sourceKind(link.href) !== 'direct') return;
-  trackInline(link, link.href, link.textContent?.trim() || titleFromUrl(link.href));
+  trackInline(link, link.href, linkTitle(link, link.href, otherMediaThan(link)));
 }
 
 function trackAudio(audio: HTMLAudioElement): void {
   const url = playableCandidate(mediaSources(audio));
-  if (url) trackInline(audio, url, document.title || titleFromUrl(url));
+  if (url) trackInline(audio, url, mediaTitle(audio, url, otherMediaThan(audio)));
 }
 
 function forgetVideo(video: Element, tracked: TrackedVideo): void {
@@ -387,7 +392,7 @@ function activate(): void {
       const tracked = videos.get(entry.target);
       if (!tracked) continue;
       tracked.visible = entry.isIntersecting;
-      if (entry.isIntersecting) inspectThumbnail(tracked);
+      if (entry.isIntersecting) inspectThumbnail(entry.target, tracked);
     }
     schedulePosition();
   });

@@ -24,3 +24,27 @@ export function titleFromUrl(url: string): string {
     return 'video';
   }
 }
+
+const MAX_TITLE_LENGTH = 100;
+const GENERIC_LABELS = /^(download|download video|click here|here|link|shot link|video|play|watch|mp4|webm|open)$/i;
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function cleanTitle(raw: string | null | undefined, siteName: string | null = null): string {
+  let title = (raw ?? '').replace(/\s+/g, ' ').trim();
+  if (siteName) {
+    const site = escapeRegExp(siteName.trim());
+    title = title
+      .replace(new RegExp(`\\s*(?:[|\\-–—·•:]|\\bon\\b|\\bat\\b)\\s*${site}\\s*$`, 'i'), '')
+      .replace(new RegExp(`^\\s*${site}\\s*[|\\-–—·•:]\\s*`, 'i'), '')
+      .trim();
+  }
+  if (GENERIC_LABELS.test(title) || title.length < 2) return '';
+  if (siteName && title.toLowerCase() === siteName.trim().toLowerCase()) return '';
+  if (title.length <= MAX_TITLE_LENGTH) return title;
+  const cut = title.slice(0, MAX_TITLE_LENGTH);
+  const space = cut.lastIndexOf(' ');
+  return (space > 40 ? cut.slice(0, space) : cut).trim();
+}
