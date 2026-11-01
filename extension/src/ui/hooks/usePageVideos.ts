@@ -4,9 +4,9 @@ import { sendRequest } from '../../shared/messaging';
 
 export type PageVideoState = { status: 'idle' } | { status: 'starting' } | { status: 'started' } | { status: 'error'; message: string };
 
-async function activeTabId(): Promise<number | null> {
+async function activeTab(): Promise<chrome.tabs.Tab | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab?.id ?? null;
+  return tab ?? null;
 }
 
 export function usePageVideos() {
@@ -14,8 +14,8 @@ export function usePageVideos() {
   const [states, setStates] = useState<Record<string, PageVideoState>>({});
 
   const load = useCallback(async () => {
-    const tabId = await activeTabId();
-    const response = tabId === null ? null : await sendRequest({ type: 'tab-videos', tabId });
+    const tabId = (await activeTab())?.id;
+    const response = tabId === undefined ? null : await sendRequest({ type: 'tab-videos', tabId });
     setVideos(response?.videos ?? []);
   }, []);
 
@@ -30,7 +30,8 @@ export function usePageVideos() {
 
   const download = useCallback(async (video: PageVideo) => {
     setStates((current) => ({ ...current, [video.url]: { status: 'starting' } }));
-    const result = await sendRequest({ type: 'download', url: video.url, title: video.title });
+    const pageUrl = (await activeTab())?.url;
+    const result = await sendRequest({ type: 'download', url: video.url, title: video.title, pageUrl });
     const next: PageVideoState = result?.ok
       ? { status: 'started' }
       : { status: 'error', message: result?.error ?? 'Could not start the download' };

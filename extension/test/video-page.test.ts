@@ -2,13 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type Message = { type: string; url?: string; videos?: Array<{ url: string }> };
 
-function installChrome(messages: Message[]) {
-  const settings = { videoDownloader: true, videoOnPages: true };
+function installChrome(messages: Message[], extra: Record<string, unknown> = {}) {
+  const settings = { videoDownloader: true, videoOnPages: true, ...extra };
   vi.stubGlobal('chrome', {
     runtime: {
       sendMessage: async (message: Message) => {
         messages.push(message);
         if (message.type !== 'inspect-media') return { ok: true };
+        if (message.url?.endsWith('.m3u8')) {
+          return { status: 'downloadable', url: message.url, extension: 'ts', mime: 'application/vnd.apple.mpegurl', sizeBytes: 5000, reason: 'HLS stream' };
+        }
         const extension = /\.(mp4|mp3)$/.exec(message.url ?? '')?.[1];
         return extension
           ? { status: 'downloadable', url: message.url, extension, mime: 'video/mp4', sizeBytes: 1000, reason: 'Direct media file' }
@@ -103,5 +106,41 @@ describe('video page detection', () => {
     expect(document.querySelectorAll('pkaf-video')).toHaveLength(1);
 
     document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+  });
+
+  function installPerformance(names: string[]) {
+    vi.stubGlobal('PerformanceObserver', class {
+      observe() {}
+      disconnect() {}
+    });
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue(names.map((name) => ({ name })) as unknown as PerformanceEntryList);
+  }
+
+  it('downloads streamed players through their HLS playlist on allowlisted sites', async () => {
+    document.head.innerHTML = '';
+    document.body.innerHTML = '<video src="blob:https://learn.example.org/abc"></video>';
+    installPerformance(['https://cdn.example.org/app.js', 'https://cdn.example.org/v/master.m3u8']);
+    const messages: Message[] = [];
+    installChrome(messages, { streamDomains: ['example.org'] });
+    await import('../src/content/video-page');
+    await vi.waitFor(() => expect(messages.some((m) => m.type === 'page-videos')).toBe(true), { timeout: 2000 });
+    expect(messages.filter((m) => m.type === 'inspect-media').map((m) => m.url)).toEqual(['https://cdn.example.org/v/master.m3u8']);
+    expect(messages.filter((m) => m.type === 'page-videos').at(-1)?.videos?.map((video) => video.url)).toEqual(['https://cdn.example.org/v/master.m3u8']);
+    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    vi.restoreAllMocks();
+  });
+
+  it('ignores HLS playlists on sites that are not in the list', async () => {
+    document.head.innerHTML = '';
+    document.body.innerHTML = '<video src="blob:https://learn.example.org/abc"></video>';
+    installPerformance(['https://cdn.example.org/v/master.m3u8']);
+    const messages: Message[] = [];
+    installChrome(messages, { streamDomains: ['other-site.com'] });
+    await import('../src/content/video-page');
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(messages.filter((m) => m.type === 'inspect-media')).toEqual([]);
+    expect(messages.filter((m) => m.type === 'page-videos').flatMap((m) => m.videos ?? [])).toEqual([]);
+    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    vi.restoreAllMocks();
   });
 });

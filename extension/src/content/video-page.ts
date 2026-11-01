@@ -1,4 +1,5 @@
-import { describeSource, MEDIA_LINK_EXTENSIONS, sourceKind } from '../core/media';
+import { matchesStreamDomain } from '../core/hls';
+import { describeSource, extensionFromPath, MEDIA_LINK_EXTENSIONS, safeHttpUrl, sourceKind } from '../core/media';
 import { titleFromUrl } from '../core/filename';
 import { isVideoButtonShown } from '../core/video-visibility';
 import type { MediaInfo, PageVideo, Settings } from '../core/types';
@@ -32,6 +33,7 @@ const ICON_SIZE = 32;
 const ICON_INSET = 10;
 const PLACEMENT_STEP = 24;
 const PLACEMENT_TRIES = 8;
+const CHILDLESS_TAGS = new Set(['VIDEO', 'AUDIO', 'IMG', 'PICTURE', 'CANVAS', 'IFRAME', 'SVG', 'INPUT', 'SOURCE']);
 const SCAN_DEBOUNCE_MS = 800;
 const REPORT_DEBOUNCE_MS = 300;
 const LINK_SELECTOR = MEDIA_LINK_EXTENSIONS.flatMap((ext) => [`a[href$=".${ext}" i]`, `a[href*=".${ext}?" i]`]).join(',');
@@ -49,6 +51,9 @@ let lastReport = '';
 let frame = 0;
 let active = false;
 let showUnavailable = false;
+let streamsAllowed = false;
+let manifestObserver: PerformanceObserver | null = null;
+const manifests: string[] = [];
 let retired = false;
 
 function isWanted(settings: Settings): boolean {
@@ -64,6 +69,49 @@ function playableCandidate(sources: string[]): string | null {
   const kinds = sources.map((source) => ({ source, kind: sourceKind(source, location.href) }));
   const candidate = kinds.find((item) => item.kind === 'direct') ?? kinds.find((item) => item.kind === 'unknown');
   return candidate ? new URL(candidate.source, location.href).toString() : null;
+}
+
+function isManifest(name: string): boolean {
+  const url = safeHttpUrl(name);
+  return url !== null && extensionFromPath(url) === 'm3u8';
+}
+
+function rememberManifests(names: string[]): boolean {
+  let added = false;
+  for (const name of names) {
+    if (!isManifest(name) || manifests.includes(name)) continue;
+    manifests.push(name);
+    added = true;
+  }
+  return added;
+}
+
+function reevaluateStreamed(): void {
+  for (const [element, tracked] of videos) {
+    if (tracked.thumbnail || !(element instanceof HTMLVideoElement)) continue;
+    tracked.source = null;
+    evaluate(element, tracked);
+  }
+}
+
+function watchManifests(): void {
+  if (manifestObserver || !streamsAllowed || typeof PerformanceObserver === 'undefined') return;
+  rememberManifests(performance.getEntriesByType('resource').map((entry) => entry.name));
+  manifestObserver = new PerformanceObserver((list) => {
+    if (rememberManifests(list.getEntries().map((entry) => entry.name))) reevaluateStreamed();
+  });
+  manifestObserver.observe({ type: 'resource', buffered: true });
+}
+
+function stopManifests(): void {
+  manifestObserver?.disconnect();
+  manifestObserver = null;
+}
+
+function streamFor(sources: string[]): string | null {
+  if (!streamsAllowed) return null;
+  const own = sources.find((source) => isManifest(source));
+  return own ?? manifests[0] ?? null;
 }
 
 function pickFallback(tracked: TrackedVideo): string | null {
@@ -142,8 +190,9 @@ function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
   }
   const streamed = sources.map((source) => sourceKind(source, location.href)).find((kind) => kind === 'blob' || kind === 'streaming');
   const direct = playableCandidate(sources);
-  if (!direct && streamed) tracked.fallback = pickFallback(tracked);
-  const url = direct ?? (streamed ? tracked.fallback : null);
+  const stream = !direct && streamed ? streamFor(sources) : null;
+  if (!direct && !stream && streamed) tracked.fallback = pickFallback(tracked);
+  const url = direct ?? stream ?? (streamed ? tracked.fallback : null);
   if (!url) {
     tracked.button.set('unavailable', describeSource(streamed ?? 'invalid'));
     return;
@@ -172,6 +221,24 @@ function iconTop(element: Element, rect: DOMRect): number {
   return start;
 }
 
+function mountTarget(element: Element): Element {
+  return CHILDLESS_TAGS.has(element.tagName.toUpperCase()) ? (element.parentElement ?? document.body) : element;
+}
+
+function mount(element: Element, button: VideoButton): void {
+  const target = mountTarget(element);
+  if (button.element.parentElement !== target) target.append(button.element);
+}
+
+function placeAt(button: VideoButton, left: number, top: number): void {
+  const host = button.element;
+  host.style.left = '0px';
+  host.style.top = '0px';
+  const origin = host.getBoundingClientRect();
+  host.style.left = `${Math.round(left - origin.left)}px`;
+  host.style.top = `${Math.round(top - origin.top)}px`;
+}
+
 function position(): void {
   frame = 0;
   for (const [video, tracked] of videos) {
@@ -184,8 +251,8 @@ function position(): void {
       isVideoButtonShown(tracked.button.state(), showUnavailable);
     tracked.button.element.toggleAttribute('data-visible', show);
     if (!show) continue;
-    tracked.button.element.style.left = `${Math.round(rect.right - ICON_INSET - ICON_SIZE)}px`;
-    tracked.button.element.style.top = `${Math.round(iconTop(video, rect))}px`;
+    mount(video, tracked.button);
+    placeAt(tracked.button, rect.right - ICON_INSET - ICON_SIZE, iconTop(video, rect));
   }
 }
 
@@ -205,7 +272,7 @@ function trackVideo(video: HTMLVideoElement): void {
     thumbnail: null,
   };
   videos.set(video, tracked);
-  document.body.append(button.element);
+  mount(video, button);
   video.addEventListener('loadedmetadata', () => evaluate(video, tracked), { signal: tracked.listeners.signal });
   intersection?.observe(video);
   evaluate(video, tracked);
@@ -223,7 +290,7 @@ function trackThumbnail(element: Element, url: string): void {
     thumbnail: url,
   };
   videos.set(element, tracked);
-  document.body.append(button.element);
+  mount(element, button);
   intersection?.observe(element);
 }
 
@@ -335,6 +402,7 @@ function activate(): void {
 }
 
 function deactivate(): void {
+  stopManifests();
   if (!active) return;
   active = false;
   observer?.disconnect();
@@ -372,11 +440,17 @@ async function start(): Promise<void> {
   );
   const applySettings = (settings: Settings) => {
     showUnavailable = settings.videoShowUnavailable;
+    const allowStreams = matchesStreamDomain(location.hostname, settings.streamDomains);
+    const streamsChanged = allowStreams !== streamsAllowed;
+    streamsAllowed = allowStreams;
     if (!isWanted(settings)) {
       deactivate();
       return;
     }
     activate();
+    if (streamsAllowed) watchManifests();
+    else stopManifests();
+    if (streamsChanged) reevaluateStreamed();
     for (const tracked of inline.values()) applyInlineVisibility(tracked.button);
     schedulePosition();
   };

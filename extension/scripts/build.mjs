@@ -22,7 +22,7 @@ const manifest = {
   name: 'PK Access Filter',
   version: pkg.version,
   description: 'Shows which Google results are accessible from Pakistan, hides confirmed blocked sites and downloads direct video files.',
-  permissions: ['storage'],
+  permissions: ['storage', 'offscreen'],
   host_permissions: [`${apiUrl.origin}/*`],
   optional_permissions: ['downloads', 'downloads.open', 'notifications', 'scripting'],
   optional_host_permissions: ['http://*/*', 'https://*/*'],
@@ -43,7 +43,7 @@ const manifest = {
   options_ui: { page: 'options/index.html', open_in_tab: true },
   icons,
   content_security_policy: { extension_pages: "script-src 'self'; object-src 'self'" },
-  minimum_chrome_version: '110',
+  minimum_chrome_version: '116',
 };
 
 await rm(dist, { recursive: true, force: true });
@@ -56,17 +56,22 @@ await buildScripts({
     background: resolve(root, 'src/background/service-worker.ts'),
     content: resolve(root, 'src/content/google-search.ts'),
     video: resolve(root, 'src/content/video-page.ts'),
+    offscreen: resolve(root, 'src/offscreen/offscreen.ts'),
   },
   outdir: dist,
   bundle: true,
   format: 'iife',
-  target: 'chrome110',
+  target: 'chrome116',
   minify: true,
   define: { __API_URL__: JSON.stringify(apiUrl.origin) },
   logLevel: 'warning',
 });
 
 await Promise.all(iconSizes.map((size) => writeFile(resolve(dist, `icons/icon-${size}.png`), iconPng(size))));
+await writeFile(
+  resolve(dist, 'offscreen.html'),
+  '<!doctype html><html><head><meta charset="utf-8"><title>Stream assembler</title></head><body><script src="offscreen.js"></script></body></html>',
+);
 await writeFile(resolve(dist, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
 console.log(`Built extension in dist/ (API: ${apiUrl.origin})`);

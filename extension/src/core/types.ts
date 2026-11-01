@@ -31,6 +31,7 @@ export interface Settings {
   videoOnGoogle: boolean;
   videoOnPages: boolean;
   videoShowUnavailable: boolean;
+  streamDomains: string[];
 }
 
 export interface SyncState {
@@ -74,6 +75,9 @@ export interface DownloadRecord {
 export type DownloadState = 'in_progress' | 'paused' | 'complete' | 'interrupted' | 'cancelled' | 'missing';
 
 export interface DownloadView {
+  kind: 'file' | 'stream';
+  streamId: string | null;
+  percent: number | null;
   record: DownloadRecord;
   state: DownloadState;
   bytesReceived: number;

@@ -36,7 +36,7 @@ const ACTIVE_STATES = new Set<VideoButtonState>(['ready', 'error']);
 const STYLES = `
 :host { all: initial; }
 :host([data-variant="inline"]) { display: inline-block; margin-left: 6px; vertical-align: middle; }
-:host([data-variant="overlay"]) { position: fixed; z-index: 2147483000; display: none; }
+:host([data-variant="overlay"]) { position: absolute; z-index: 2147483000; display: none; margin: 0; }
 :host([data-visible]) { display: block; }
 button { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #dadce0; background: #fff; color: #5f6368;
   font: 500 11px/16px Arial, Helvetica, sans-serif; cursor: default; padding: 0 7px; height: 18px; border-radius: 9px; }

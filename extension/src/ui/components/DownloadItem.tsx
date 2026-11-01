@@ -3,13 +3,13 @@ import { progressPercent } from '../../core/downloads';
 import type { DownloadView } from '../../core/types';
 
 export interface DownloadHandlers {
-  onPause: (id: number) => void;
-  onResume: (id: number) => void;
-  onCancel: (id: number) => void;
+  onPause: (view: DownloadView) => void;
+  onResume: (view: DownloadView) => void;
+  onCancel: (view: DownloadView) => void;
   onRetry: (view: DownloadView) => void;
-  onOpen: (id: number) => void;
-  onShow: (id: number) => void;
-  onRemove: (id: number) => void;
+  onOpen: (view: DownloadView) => void;
+  onShow: (view: DownloadView) => void;
+  onRemove: (view: DownloadView) => void;
 }
 
 interface DownloadItemProps extends DownloadHandlers {
@@ -51,6 +51,8 @@ export function DownloadItem({ view, onPause, onResume, onCancel, onRetry, onOpe
   const percent = progressPercent(view);
   const size = view.totalBytes ? `${formatBytes(view.bytesReceived)} / ${formatBytes(view.totalBytes)}` : formatBytes(view.bytesReceived);
   const canRetry = state === 'interrupted' || state === 'cancelled' || state === 'missing';
+  const saving = view.kind === 'stream' && percent === 100 && state === 'in_progress';
+  const statusText = saving ? 'Saving file' : view.kind === 'stream' && state === 'in_progress' ? 'Downloading stream' : STATUS_TEXT[state];
 
   return (
     <li className="flex flex-col gap-1.5 py-2.5">
@@ -67,20 +69,20 @@ export function DownloadItem({ view, onPause, onResume, onCancel, onRetry, onOpe
       </div>
       <div className="flex items-center justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400">
         <span>
-          {STATUS_TEXT[state]}
+          {statusText}
           {percent !== null && state !== 'complete' ? ` · ${percent}%` : ''} · {state === 'complete' ? formatBytes(view.totalBytes) : size}
         </span>
       </div>
       {view.error && <p className="text-xs text-red-600 dark:text-red-400">{view.error}</p>}
       <div className="-ml-1.5 flex flex-wrap gap-0.5">
-        {state === 'in_progress' && <Action label="Pause" onClick={() => onPause(record.id)} />}
-        {state === 'paused' && <Action label="Resume" onClick={() => onResume(record.id)} />}
-        {(state === 'in_progress' || state === 'paused') && <Action label="Cancel" onClick={() => onCancel(record.id)} />}
-        {state === 'interrupted' && view.canResume && <Action label="Resume" onClick={() => onResume(record.id)} />}
+        {state === 'in_progress' && !saving && <Action label="Pause" onClick={() => onPause(view)} />}
+        {state === 'paused' && <Action label="Resume" onClick={() => onResume(view)} />}
+        {(state === 'in_progress' || state === 'paused') && !saving && <Action label="Cancel" onClick={() => onCancel(view)} />}
+        {state === 'interrupted' && view.canResume && <Action label="Resume" onClick={() => onResume(view)} />}
         {canRetry && <Action label="Retry" onClick={() => onRetry(view)} />}
-        {state === 'complete' && view.fileExists && <Action label="Open" onClick={() => onOpen(record.id)} />}
-        {state === 'complete' && view.fileExists && <Action label="Show in folder" onClick={() => onShow(record.id)} />}
-        {state !== 'in_progress' && state !== 'paused' && <Action label="Remove" onClick={() => onRemove(record.id)} />}
+        {state === 'complete' && view.fileExists && <Action label="Open" onClick={() => onOpen(view)} />}
+        {state === 'complete' && view.fileExists && <Action label="Show in folder" onClick={() => onShow(view)} />}
+        {state !== 'in_progress' && state !== 'paused' && <Action label="Remove" onClick={() => onRemove(view)} />}
       </div>
     </li>
   );

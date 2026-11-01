@@ -54,6 +54,17 @@ How a file is judged:
 
 Safety: http/https only, localhost / private / link-local IP literals and `.local`-style hosts blocked, final redirect URL re-checked, filenames sanitized with the extension kept, duplicate clicks and already-running URLs rejected.
 
+### Stream downloads (HLS) for allowlisted websites
+
+Settings → **Stream downloads (HLS)** takes a list of websites typed in by the user. Only add websites whose videos you own or have permission to download. On those websites (and their subdomains) a streamed player that has no single file gets the same green icon, icon count and popup entry as a normal video:
+
+1. The page script spots the `.m3u8` playlist the player loaded (via the page's resource timing, no extra permission) once the site is in the list.
+2. The background checks the tab's real URL against the list (a page can't claim to be allowlisted), reads the playlist, picks the best quality that has audio built in, and refuses encrypted (`#EXT-X-KEY` other than `NONE`), DRM and live streams. Byte-range playlists (`#EXT-X-BYTERANGE`, one big file split by ranges) are fetched with HTTP `Range` requests.
+3. An offscreen document downloads the segments, 4 at a time with 3 retries each, in order, straight into the browser's private file storage (OPFS), so large videos never sit in memory. The finished file is handed to `chrome.downloads`, then the temporary copy is deleted.
+4. TS streams save as `.ts`, fragmented MP4 as `.mp4`. When the only good quality keeps audio in a separate track, video and audio are saved as two files (there is no ffmpeg in the extension).
+
+The Downloads tab shows stream jobs next to normal downloads, with Pause, Resume, Cancel, Retry and Remove. If the browser closes mid-download the job is marked failed and can be retried.
+
 When a page has downloadable videos, the extension icon shows how many (1, 2, 3…) for that tab, and opening the popup jumps to a **Videos (N)** list with a Download button per video. The count updates as videos appear or disappear and clears when the tab navigates or closes.
 
 Popup → **Downloads** tab shows title, format, size, progress and status, with Pause, Resume, Cancel, Retry, Open and Show in folder. Chrome keeps the real download state, so it survives service-worker restarts and browser restarts; interrupted downloads offer Resume when the server supports it, otherwise Retry.

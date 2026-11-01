@@ -36,7 +36,7 @@ export function DownloadList({ items, enabled, message, onOpenSettings, ...handl
       ) : (
         <ul className="max-h-80 divide-y divide-neutral-100 overflow-y-auto dark:divide-neutral-800">
           {items.map((view) => (
-            <DownloadItem key={view.record.id} view={view} {...handlers} />
+            <DownloadItem key={view.streamId ?? view.record.id} view={view} {...handlers} />
           ))}
         </ul>
       )}

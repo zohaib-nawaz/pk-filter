@@ -91,13 +91,13 @@ export function App() {
           enabled={settings.videoDownloader && downloads.available}
           message={downloads.message}
           onOpenSettings={openSettings}
-          onPause={(id) => void downloads.pause(id)}
-          onResume={(id) => void downloads.resume(id)}
-          onCancel={(id) => void downloads.cancel(id)}
-          onRetry={(view) => void downloads.retry(view.record)}
-          onOpen={(id) => void downloads.open(id)}
-          onShow={(id) => void downloads.show(id)}
-          onRemove={(id) => void downloads.remove(id)}
+          onPause={(view) => void downloads.run('pause', view)}
+          onResume={(view) => void downloads.run('resume', view)}
+          onCancel={(view) => void downloads.run('cancel', view)}
+          onRetry={(view) => void downloads.run('retry', view)}
+          onOpen={(view) => void downloads.run('open', view)}
+          onShow={(view) => void downloads.run('show', view)}
+          onRemove={(view) => void downloads.run('remove', view)}
           />
         </>
       )}

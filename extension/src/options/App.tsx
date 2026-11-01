@@ -1,5 +1,6 @@
-import { CHECK_FREQUENCIES, FILTER_MODES } from '../core/settings';
+import { CHECK_FREQUENCIES, FILTER_MODES, MAX_STREAM_DOMAINS, parseStreamDomain } from '../core/settings';
 import { Button } from '../ui/components/Button';
+import { DomainListEditor } from '../ui/components/DomainListEditor';
 import { OptionList } from '../ui/components/OptionList';
 import { Section } from '../ui/components/Section';
 import { ServiceSummary } from '../ui/components/ServiceSummary';
@@ -17,6 +18,15 @@ export function App() {
   const downloader = useVideoDownloader(settings, update);
 
   if (!settings) return null;
+
+  const addStreamDomain = (input: string): string | null => {
+    const domain = parseStreamDomain(input);
+    if (!domain) return 'Enter a website like example.com';
+    if (settings.streamDomains.includes(domain)) return 'This website is already in the list';
+    if (settings.streamDomains.length >= MAX_STREAM_DOMAINS) return `You can add up to ${MAX_STREAM_DOMAINS} websites`;
+    void update({ streamDomains: [...settings.streamDomains, domain] });
+    return null;
+  };
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-10">
@@ -83,6 +93,19 @@ export function App() {
             onChange={(videoShowUnavailable) => void update({ videoShowUnavailable })}
           />
         </div>
+      </Section>
+
+      <Section
+        title="Stream downloads (HLS)"
+        description="On these websites, streamed videos (.m3u8) are downloaded piece by piece and saved as one file. Only add websites whose videos you own or have permission to download. Encrypted, DRM and live streams are never downloaded."
+      >
+        <DomainListEditor
+          domains={settings.streamDomains}
+          disabled={!settings.videoDownloader}
+          placeholder="example.com"
+          onAdd={addStreamDomain}
+          onRemove={(domain) => void update({ streamDomains: settings.streamDomains.filter((item) => item !== domain) })}
+        />
       </Section>
 
       <Section title="Checking frequency" description="How long a measurement is reused before the site is checked again.">

@@ -1,3 +1,4 @@
+import { normalizeDomain } from './domain';
 import type { FilterMode, Settings } from './types';
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -9,7 +10,26 @@ export const DEFAULT_SETTINGS: Settings = {
   videoOnGoogle: true,
   videoOnPages: true,
   videoShowUnavailable: false,
+  streamDomains: [],
 };
+
+export const MAX_STREAM_DOMAINS = 50;
+
+export function parseStreamDomain(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+  try {
+    return normalizeDomain(new URL(raw.includes('://') ? raw : `https://${raw}`).hostname);
+  } catch {
+    return null;
+  }
+}
+
+function streamDomainList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const domains = value.map((item) => (typeof item === 'string' ? parseStreamDomain(item) : null)).filter((item): item is string => item !== null);
+  return [...new Set(domains)].slice(0, MAX_STREAM_DOMAINS);
+}
 
 export const FILTER_MODES: Array<{ value: FilterMode; label: string; hint: string }> = [
   { value: 'all', label: 'Show all websites', hint: 'Only adds status badges' },
@@ -42,5 +62,6 @@ export function sanitizeSettings(input: unknown): Settings {
     videoOnGoogle: flag(raw.videoOnGoogle, DEFAULT_SETTINGS.videoOnGoogle),
     videoOnPages: flag(raw.videoOnPages, DEFAULT_SETTINGS.videoOnPages),
     videoShowUnavailable: flag(raw.videoShowUnavailable, DEFAULT_SETTINGS.videoShowUnavailable),
+    streamDomains: streamDomainList(raw.streamDomains),
   };
 }

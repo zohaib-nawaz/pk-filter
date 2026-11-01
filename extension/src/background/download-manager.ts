@@ -58,7 +58,7 @@ export async function startDownload(rawUrl: string, title: string): Promise<Down
       startedAt: new Date().toISOString(),
     });
     watchDownloads();
-    return { ok: true, id };
+    return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Chrome could not start the download' };
   } finally {
