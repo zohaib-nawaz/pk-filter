@@ -12,7 +12,7 @@ import { controlStreamJob, failInterruptedJobs, handleOffscreenEvent, startStrea
 import { syncVideoSites } from './video-sites';
 
 const SIMPLE_TYPES = ['overview', 'refresh', 'clear-cache', 'sync-video-sites'];
-const OFFSCREEN_EVENTS = ['stream-progress', 'stream-track-ready', 'stream-failed'];
+const OFFSCREEN_EVENTS = ['stream-progress', 'stream-track-ready', 'stream-failed', 'stream-split'];
 const STREAM_ACTIONS = ['pause', 'resume', 'cancel', 'retry', 'remove'];
 
 function isStringList(value: unknown, max: number): value is string[] {
@@ -76,6 +76,7 @@ async function handle(request: Request, sender: chrome.runtime.MessageSender): P
     case 'stream-progress':
     case 'stream-track-ready':
     case 'stream-failed':
+    case 'stream-split':
       await handleOffscreenEvent(request);
       return { ok: true };
     case 'stream-control':

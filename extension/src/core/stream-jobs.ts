@@ -29,7 +29,8 @@ export type OffscreenCommand =
 export type OffscreenEvent =
   | { type: 'stream-progress'; id: string; done: number; bytes: number }
   | { type: 'stream-track-ready'; id: string; index: number; url: string; extension: string }
-  | { type: 'stream-failed'; id: string; error: string; cancelled: boolean };
+  | { type: 'stream-failed'; id: string; error: string; cancelled: boolean }
+  | { type: 'stream-split'; id: string; trackCount: number };
 
 export const ACTIVE_STREAM_STATES = new Set<StreamJobState>(['downloading', 'paused', 'saving']);
 
@@ -40,7 +41,7 @@ export function newStreamJob(id: string, plan: StreamPlan, title: string, pageUr
     pageUrl,
     manifestUrl: plan.manifestUrl,
     extension: plan.tracks[0]?.extension ?? 'ts',
-    trackCount: plan.tracks.length,
+    trackCount: plan.combine ? 1 : plan.tracks.length,
     state: 'downloading',
     done: 0,
     total: plan.tracks.reduce((sum, track) => sum + track.segments.length + (track.init ? 1 : 0), 0),

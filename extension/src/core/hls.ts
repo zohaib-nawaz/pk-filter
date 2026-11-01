@@ -40,6 +40,7 @@ export interface StreamTrack {
 export interface StreamPlan {
   manifestUrl: string;
   tracks: StreamTrack[];
+  combine: boolean;
   durationSeconds: number;
   estimatedBytes: number | null;
   resolution: string | null;
@@ -151,6 +152,10 @@ export function streamProblem(media: HlsMedia): string | null {
   if (media.segments.length === 0) return 'This stream has no video segments';
   if (media.segments.length > MAX_SEGMENTS) return 'This stream is too long to download';
   return null;
+}
+
+export function canCombine(tracks: StreamTrack[]): boolean {
+  return tracks.length === 2 && tracks.every((track) => track.init !== null);
 }
 
 export function estimateBytes(bandwidth: number, durationSeconds: number): number | null {

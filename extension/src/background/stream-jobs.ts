@@ -109,6 +109,10 @@ export async function handleOffscreenEvent(event: OffscreenEvent): Promise<void>
     });
     return;
   }
+  if (event.type === 'stream-split') {
+    await updateJob(event.id, () => ({ trackCount: event.trackCount }));
+    return;
+  }
   const job = await updateJob(event.id, () => ({ state: event.cancelled ? 'cancelled' : 'failed', error: event.error }));
   if (job && !event.cancelled) notify(job, 'Download failed', `${job.title}: ${event.error}`);
 }

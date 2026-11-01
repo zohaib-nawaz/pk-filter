@@ -61,7 +61,7 @@ Settings → **Stream downloads (HLS)** takes a list of websites typed in by the
 1. The page script spots the `.m3u8` playlist the player loaded (via the page's resource timing, no extra permission) once the site is in the list.
 2. The background checks the tab's real URL against the list (a page can't claim to be allowlisted), reads the playlist, picks the best quality that has audio built in, and refuses encrypted (`#EXT-X-KEY` other than `NONE`), DRM and live streams. Byte-range playlists (`#EXT-X-BYTERANGE`, one big file split by ranges) are fetched with HTTP `Range` requests.
 3. An offscreen document downloads the segments, 4 at a time with 3 retries each, in order, straight into the browser's private file storage (OPFS), so large videos never sit in memory. The finished file is handed to `chrome.downloads`, then the temporary copy is deleted.
-4. TS streams save as `.ts`, fragmented MP4 as `.mp4`. When the only good quality keeps audio in a separate track, video and audio are saved as two files (there is no ffmpeg in the extension).
+4. TS streams save as `.ts`, fragmented MP4 as `.mp4`. When the best quality keeps audio in a separate fragmented-MP4 track, a small built-in muxer joins them into one `.mp4` (audio gets its own track id, segments are interleaved). Only separate-audio TS streams, which would need ffmpeg, still save video and audio as two files.
 
 The Downloads tab shows stream jobs next to normal downloads, with Pause, Resume, Cancel, Retry and Remove. If the browser closes mid-download the job is marked failed and can be retried.
 

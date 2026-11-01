@@ -194,7 +194,7 @@ describe('runSegments', () => {
 describe('stream jobs in the downloads list', () => {
   it('shows progress, saving and completion', () => {
     const segments = ['1', '2', '3', '4'].map((name) => ({ url: `https://cdn.example.com/${name}.ts`, range: null }));
-    const plan = { manifestUrl: BASE, tracks: [{ kind: 'video' as const, extension: 'ts', init: null, segments }], durationSeconds: 40, estimatedBytes: 4000, resolution: '1280x720' };
+    const plan = { manifestUrl: BASE, tracks: [{ kind: 'video' as const, extension: 'ts', init: null, segments }], combine: false, durationSeconds: 40, estimatedBytes: 4000, resolution: '1280x720' };
     const job = newStreamJob('job-1', plan, 'Lecture 1', 'https://learn.example.org/v/1', new Date('2026-11-01T00:00:00Z'));
     expect(job).toMatchObject({ total: 4, state: 'downloading', extension: 'ts' });
     expect(toStreamView({ ...job, done: 2 })).toMatchObject({ kind: 'stream', streamId: 'job-1', state: 'in_progress', percent: 50 });

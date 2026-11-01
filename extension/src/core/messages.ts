@@ -30,6 +30,7 @@ export interface ResponseMap {
   'stream-progress': { ok: boolean };
   'stream-track-ready': { ok: boolean };
   'stream-failed': { ok: boolean };
+  'stream-split': { ok: boolean };
   overview: OverviewStats;
   refresh: { ok: true };
   'clear-cache': { ok: true };

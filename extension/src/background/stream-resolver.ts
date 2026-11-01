@@ -1,4 +1,4 @@
-import { estimateBytes, parsePlaylist, pickVariant, streamProblem, trackExtension, type HlsMedia, type HlsPlaylist, type StreamPlan, type StreamTrack } from '../core/hls';
+import { canCombine, estimateBytes, parsePlaylist, pickVariant, streamProblem, trackExtension, type HlsMedia, type HlsPlaylist, type StreamPlan, type StreamTrack } from '../core/hls';
 import type { MediaInfo } from '../core/types';
 
 const TIMEOUT_MS = 10_000;
@@ -47,9 +47,11 @@ export async function resolveStream(url: string): Promise<StreamPlan> {
     if (problem) throw new Error(problem);
     video = playlist;
   }
+  const tracks = audio ? [toTrack(video, 'video'), toTrack(audio, 'audio')] : [toTrack(video, 'video')];
   const plan: StreamPlan = {
     manifestUrl: finalUrl,
-    tracks: audio ? [toTrack(video, 'video'), toTrack(audio, 'audio')] : [toTrack(video, 'video')],
+    tracks,
+    combine: canCombine(tracks),
     durationSeconds: video.durationSeconds,
     estimatedBytes: estimateBytes(bandwidth, video.durationSeconds),
     resolution,
@@ -62,7 +64,7 @@ export async function inspectStream(url: string): Promise<MediaInfo> {
   try {
     const plan = await resolveStream(url);
     const extension = plan.tracks[0]?.extension ?? 'ts';
-    const separate = plan.tracks.length > 1 ? ' (video and audio save as two files)' : '';
+    const separate = plan.tracks.length > 1 && !plan.combine ? ' (video and audio save as two files)' : '';
     return {
       status: 'downloadable',
       url,

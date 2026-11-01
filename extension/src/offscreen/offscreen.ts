@@ -1,4 +1,5 @@
-import type { StreamPlan, StreamSegment } from '../core/hls';
+import { interleave, mergeInitSegments, retagFragment } from '../core/fmp4';
+import type { StreamPlan, StreamSegment, StreamTrack } from '../core/hls';
 import { runSegments, SegmentError, type SegmentChunk } from '../core/segment-pipeline';
 import type { OffscreenCommand, OffscreenEvent } from '../core/stream-jobs';
 
@@ -48,52 +49,128 @@ async function clearStaleFiles(): Promise<void> {
   }
 }
 
+interface JobContext {
+  id: string;
+  job: RunningJob;
+  root: FileSystemDirectoryHandle;
+  progress: (added: number) => void;
+  waitIfPaused: () => Promise<void>;
+  flush: () => void;
+}
+
+async function writeFile(
+  context: JobContext,
+  name: string,
+  write: (writable: FileSystemWritableFileStream) => Promise<void>,
+): Promise<FileSystemFileHandle> {
+  const handle = await context.root.getFileHandle(name, { create: true });
+  const writable = await handle.createWritable();
+  try {
+    await write(writable);
+    await writable.close();
+  } catch (error) {
+    await writable.abort().catch(() => undefined);
+    throw error;
+  }
+  return handle;
+}
+
+async function publish(context: JobContext, handle: FileSystemFileHandle, index: number, extension: string): Promise<void> {
+  const url = URL.createObjectURL(await handle.getFile());
+  context.job.urls.push(url);
+  blobUrls.set(context.id, context.job.urls);
+  context.flush();
+  emit({ type: 'stream-track-ready', id: context.id, index, url, extension });
+}
+
+async function saveSeparately(context: JobContext, tracks: StreamTrack[]): Promise<void> {
+  for (const [index, track] of tracks.entries()) {
+    const handle = await writeFile(context, fileName(context.id, index, track.extension), async (writable) => {
+      if (track.init) {
+        const init = await fetchSegment(track.init, context.job.abort.signal);
+        await writable.write(init);
+        context.progress(init.byteLength);
+      }
+      await runSegments({
+        items: track.segments,
+        concurrency: CONCURRENCY,
+        attempts: ATTEMPTS,
+        signal: context.job.abort.signal,
+        fetchSegment,
+        write: (chunk) => writable.write(chunk),
+        waitIfPaused: context.waitIfPaused,
+        onSegment: context.progress,
+      });
+    });
+    await publish(context, handle, index, track.extension);
+  }
+}
+
+async function saveCombined(context: JobContext, video: StreamTrack, audio: StreamTrack): Promise<boolean> {
+  const signal = context.job.abort.signal;
+  const [videoInit, audioInit] = await Promise.all([
+    fetchSegment(video.init as StreamSegment, signal),
+    fetchSegment(audio.init as StreamSegment, signal),
+  ]);
+  let merged;
+  try {
+    merged = mergeInitSegments(videoInit, audioInit);
+  } catch {
+    return false;
+  }
+  context.progress(videoInit.byteLength);
+  context.progress(audioInit.byteLength);
+  const items = interleave(
+    video.segments.map((segment) => ({ segment, audio: false })),
+    audio.segments.map((segment) => ({ segment, audio: true })),
+  );
+  const handle = await writeFile(context, fileName(context.id, 0, 'mp4'), async (writable) => {
+    await writable.write(merged.init);
+    await runSegments({
+      items,
+      concurrency: CONCURRENCY,
+      attempts: ATTEMPTS,
+      signal,
+      fetchSegment: async (item, itemSignal) => {
+        const bytes = await fetchSegment(item.segment, itemSignal);
+        return item.audio ? retagFragment(bytes, merged.audioTrackId) : bytes;
+      },
+      write: (chunk) => writable.write(chunk),
+      waitIfPaused: context.waitIfPaused,
+      onSegment: context.progress,
+    });
+  });
+  await publish(context, handle, 0, 'mp4');
+  return true;
+}
+
 async function run(id: string, plan: StreamPlan): Promise<void> {
   const job: RunningJob = { abort: new AbortController(), paused: false, resume: null, urls: [] };
   jobs.set(id, job);
-  const root = await navigator.storage.getDirectory();
   let done = 0;
   let bytes = 0;
   let lastEmit = 0;
-  const progress = (added: number) => {
-    done += 1;
-    bytes += added;
-    if (Date.now() - lastEmit < PROGRESS_INTERVAL_MS) return;
-    lastEmit = Date.now();
-    emit({ type: 'stream-progress', id, done, bytes });
+  const context: JobContext = {
+    id,
+    job,
+    root: await navigator.storage.getDirectory(),
+    progress: (added) => {
+      done += 1;
+      bytes += added;
+      if (Date.now() - lastEmit < PROGRESS_INTERVAL_MS) return;
+      lastEmit = Date.now();
+      emit({ type: 'stream-progress', id, done, bytes });
+    },
+    waitIfPaused: () => (job.paused ? new Promise<void>((resolve) => (job.resume = resolve)) : Promise.resolve()),
+    flush: () => emit({ type: 'stream-progress', id, done, bytes }),
   };
-  const waitIfPaused = () => (job.paused ? new Promise<void>((resolve) => (job.resume = resolve)) : Promise.resolve());
 
   try {
-    for (const [index, track] of plan.tracks.entries()) {
-      const handle = await root.getFileHandle(fileName(id, index, track.extension), { create: true });
-      const writable = await handle.createWritable();
-      try {
-        if (track.init) {
-          const init = await fetchSegment(track.init, job.abort.signal);
-          await writable.write(init);
-          progress(init.byteLength);
-        }
-        await runSegments({
-          items: track.segments,
-          concurrency: CONCURRENCY,
-          attempts: ATTEMPTS,
-          signal: job.abort.signal,
-          fetchSegment,
-          write: (chunk) => writable.write(chunk),
-          waitIfPaused,
-          onSegment: progress,
-        });
-        await writable.close();
-      } catch (error) {
-        await writable.abort().catch(() => undefined);
-        throw error;
-      }
-      const url = URL.createObjectURL(await handle.getFile());
-      job.urls.push(url);
-      blobUrls.set(id, job.urls);
-      emit({ type: 'stream-progress', id, done, bytes });
-      emit({ type: 'stream-track-ready', id, index, url, extension: track.extension });
+    const [video, audio] = plan.tracks;
+    const combined = plan.combine && video && audio ? await saveCombined(context, video, audio) : false;
+    if (!combined) {
+      if (plan.combine) emit({ type: 'stream-split', id, trackCount: plan.tracks.length });
+      await saveSeparately(context, plan.tracks);
     }
   } catch (error) {
     const cancelled = job.abort.signal.aborted;
