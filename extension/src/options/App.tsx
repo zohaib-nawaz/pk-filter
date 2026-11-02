@@ -96,8 +96,8 @@ export function App() {
       </Section>
 
       <Section
-        title="Stream downloads (HLS)"
-        description="On these websites, streamed videos (.m3u8) are downloaded piece by piece and saved as one file. Only add websites whose videos you own or have permission to download. Encrypted, DRM and live streams are never downloaded."
+        title="Stream downloads (HLS / DASH)"
+        description="On these websites, streamed videos (HLS .m3u8 and DASH .mpd) are downloaded piece by piece and saved as one file. Only add websites whose videos you own or have permission to download. Encrypted, DRM and live streams are never downloaded."
       >
         <DomainListEditor
           domains={settings.streamDomains}

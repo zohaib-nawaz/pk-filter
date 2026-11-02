@@ -6,6 +6,7 @@ import { sendRequest } from '../shared/messaging';
 import { loadSettings, onSettingsChanged } from '../shared/storage';
 import { linkTitle, mediaTitle } from './media-title';
 import { metadataMediaSources } from './page-metadata';
+import { declaredForElement, declaredOnPage, DOWNLOAD_ATTRIBUTE } from './site-declarations';
 import { prepareDownload } from './video-actions';
 import { createVideoButton, VIDEO_BUTTON_TAG, type VideoButton } from './video-button';
 
@@ -46,6 +47,7 @@ const usedFallbacks = new Set<string>();
 let observer: MutationObserver | null = null;
 let intersection: IntersectionObserver | null = null;
 let scanTimer: number | undefined;
+let declarationsChanged = false;
 let reportTimer: number | undefined;
 let lastReport = '';
 let frame = 0;
@@ -73,13 +75,16 @@ function playableCandidate(sources: string[]): string | null {
 
 function isManifest(name: string): boolean {
   const url = safeHttpUrl(name);
-  return url !== null && extensionFromPath(url) === 'm3u8';
+  const extension = url ? extensionFromPath(url) : null;
+  return extension === 'm3u8' || extension === 'mpd';
 }
 
 function rememberManifests(names: string[]): boolean {
   let added = false;
   for (const name of names) {
-    if (!isManifest(name) || manifests.includes(name)) continue;
+    if (!isManifest(name) || manifests.includes(name)) {
+      continue;
+    }
     manifests.push(name);
     added = true;
   }
@@ -88,17 +93,23 @@ function rememberManifests(names: string[]): boolean {
 
 function reevaluateStreamed(): void {
   for (const [element, tracked] of videos) {
-    if (tracked.thumbnail || !(element instanceof HTMLVideoElement)) continue;
+    if (tracked.thumbnail || !(element instanceof HTMLVideoElement)) {
+      continue;
+    }
     tracked.source = null;
     evaluate(element, tracked);
   }
 }
 
 function watchManifests(): void {
-  if (manifestObserver || !streamsAllowed || typeof PerformanceObserver === 'undefined') return;
+  if (manifestObserver || !streamsAllowed || typeof PerformanceObserver === 'undefined') {
+    return;
+  }
   rememberManifests(performance.getEntriesByType('resource').map((entry) => entry.name));
   manifestObserver = new PerformanceObserver((list) => {
-    if (rememberManifests(list.getEntries().map((entry) => entry.name))) reevaluateStreamed();
+    if (rememberManifests(list.getEntries().map((entry) => entry.name))) {
+      reevaluateStreamed();
+    }
   });
   manifestObserver.observe({ type: 'resource', buffered: true });
 }
@@ -109,32 +120,44 @@ function stopManifests(): void {
 }
 
 function streamFor(sources: string[]): string | null {
-  if (!streamsAllowed) return null;
+  if (!streamsAllowed) {
+    return null;
+  }
   const own = sources.find((source) => isManifest(source));
-  return own ?? manifests[0] ?? null;
+  return own ?? declaredOnPage()[0] ?? manifests[0] ?? null;
 }
 
 function pickFallback(tracked: TrackedVideo): string | null {
   const available = metadataMediaSources();
-  if (tracked.fallback && available.includes(tracked.fallback)) return tracked.fallback;
+  if (tracked.fallback && available.includes(tracked.fallback)) {
+    return tracked.fallback;
+  }
   const next = available.find((url) => !usedFallbacks.has(url)) ?? null;
-  if (next) usedFallbacks.add(next);
+  if (next) {
+    usedFallbacks.add(next);
+  }
   return next;
 }
 
 function toPageVideo(info: MediaInfo | null, title: string): PageVideo | null {
-  if (!info?.extension) return null;
+  if (!info?.extension) {
+    return null;
+  }
   return { url: info.url, title, extension: info.extension, sizeBytes: info.sizeBytes };
 }
 
 function report(): void {
   const found = new Map<string, PageVideo>();
   for (const item of [...videos.values(), ...inline.values()]) {
-    if (item.media && !found.has(item.media.url)) found.set(item.media.url, item.media);
+    if (item.media && !found.has(item.media.url)) {
+      found.set(item.media.url, item.media);
+    }
   }
   const list = [...found.values()];
   const signature = list.map((video) => video.url).join('|');
-  if (signature === lastReport) return;
+  if (signature === lastReport) {
+    return;
+  }
   lastReport = signature;
   void sendRequest({ type: 'page-videos', videos: list });
 }
@@ -150,9 +173,15 @@ function otherMediaThan(self: Element): (candidate: Element) => boolean {
 }
 
 function qualityRank(name: string): number {
-  if (/large|hd|high|full|original/i.test(name)) return 3;
-  if (/medium/i.test(name)) return 2;
-  if (/small|thumb|preview|low/i.test(name)) return 0;
+  if (/large|hd|high|full|original/i.test(name)) {
+    return 3;
+  }
+  if (/medium/i.test(name)) {
+    return 2;
+  }
+  if (/small|thumb|preview|low/i.test(name)) {
+    return 0;
+  }
   return 1;
 }
 
@@ -166,13 +195,17 @@ function thumbnailSource(element: Element): string | null {
 
 function insideTrackedThumbnail(element: Element): boolean {
   for (let parent = element.parentElement; parent; parent = parent.parentElement) {
-    if (videos.get(parent)?.thumbnail) return true;
+    if (videos.get(parent)?.thumbnail) {
+      return true;
+    }
   }
   return false;
 }
 
 function inspectThumbnail(element: Element, tracked: TrackedVideo): void {
-  if (!tracked.thumbnail || tracked.source === tracked.thumbnail) return;
+  if (!tracked.thumbnail || tracked.source === tracked.thumbnail) {
+    return;
+  }
   const url = tracked.thumbnail;
   tracked.source = url;
   const title = mediaTitle(element, url, otherMediaThan(element));
@@ -184,8 +217,11 @@ function inspectThumbnail(element: Element, tracked: TrackedVideo): void {
 
 function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
   const sources = mediaSources(video);
-  const signature = sources.join('|') || null;
-  if (signature === tracked.source) return;
+  const declared = streamsAllowed ? declaredForElement(video) : null;
+  const signature = (declared ? [declared, ...sources] : sources).join('|') || null;
+  if (signature === tracked.source) {
+    return;
+  }
   tracked.source = signature;
   tracked.media = null;
   scheduleReport();
@@ -194,18 +230,26 @@ function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
     return;
   }
   const streamed = sources.map((source) => sourceKind(source, location.href)).find((kind) => kind === 'blob' || kind === 'streaming');
-  const direct = playableCandidate(sources);
+  const direct = declared ?? playableCandidate(sources);
   const stream = !direct && streamed ? streamFor(sources) : null;
-  if (!direct && !stream && streamed) tracked.fallback = pickFallback(tracked);
+  if (!direct && !stream && streamed) {
+    tracked.fallback = pickFallback(tracked);
+  }
   const url = direct ?? stream ?? (streamed ? tracked.fallback : null);
   if (!url) {
     tracked.button.set('unavailable', describeSource(streamed ?? 'invalid'));
     return;
   }
   const title = mediaTitle(video, url, otherMediaThan(video));
+  const viaFallback = url === tracked.fallback;
   void prepareDownload(tracked.button, url, title).then((info) => {
-    if (tracked.source !== signature) return;
+    if (tracked.source !== signature) {
+      return;
+    }
     tracked.media = toPageVideo(info, title);
+    if (!info && viaFallback && streamed) {
+      tracked.button.set('unavailable', describeSource(streamed));
+    }
     scheduleReport();
   });
 }
@@ -220,8 +264,12 @@ function iconTop(element: Element, rect: DOMRect): number {
   const x = rect.right - ICON_INSET - ICON_SIZE / 2;
   for (let attempt = 0; attempt < PLACEMENT_TRIES; attempt += 1) {
     const top = start + attempt * PLACEMENT_STEP;
-    if (top + ICON_SIZE > rect.bottom) break;
-    if (isUncovered(element, x, top + ICON_SIZE / 2)) return top;
+    if (top + ICON_SIZE > rect.bottom) {
+      break;
+    }
+    if (isUncovered(element, x, top + ICON_SIZE / 2)) {
+      return top;
+    }
   }
   return start;
 }
@@ -232,7 +280,9 @@ function mountTarget(element: Element): Element {
 
 function mount(element: Element, button: VideoButton): void {
   const target = mountTarget(element);
-  if (button.element.parentElement !== target) target.append(button.element);
+  if (button.element.parentElement !== target) {
+    target.append(button.element);
+  }
 }
 
 function placeAt(button: VideoButton, left: number, top: number): void {
@@ -255,14 +305,18 @@ function position(): void {
       !document.fullscreenElement &&
       isVideoButtonShown(tracked.button.state(), showUnavailable);
     tracked.button.element.toggleAttribute('data-visible', show);
-    if (!show) continue;
+    if (!show) {
+      continue;
+    }
     mount(video, tracked.button);
     placeAt(tracked.button, rect.right - ICON_INSET - ICON_SIZE, iconTop(video, rect));
   }
 }
 
 function schedulePosition(): void {
-  if (!frame) frame = requestAnimationFrame(position);
+  if (!frame) {
+    frame = requestAnimationFrame(position);
+  }
 }
 
 function trackVideo(video: HTMLVideoElement): void {
@@ -303,10 +357,16 @@ function scanThumbnails(): void {
   const found = document.evaluate(THUMBNAIL_XPATH, document.body, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
   for (let index = 0; index < found.snapshotLength && videos.size < MAX_OVERLAYS; index += 1) {
     const element = found.snapshotItem(index) as Element | null;
-    if (!element || NOT_THUMBNAILS.has(element.tagName) || videos.has(element) || insideTrackedThumbnail(element)) continue;
-    if ([...videos.keys()].some((tracked) => element.contains(tracked))) continue;
+    if (!element || NOT_THUMBNAILS.has(element.tagName) || videos.has(element) || insideTrackedThumbnail(element)) {
+      continue;
+    }
+    if ([...videos.keys()].some((tracked) => element.contains(tracked))) {
+      continue;
+    }
     const url = thumbnailSource(element);
-    if (url) trackThumbnail(element, url);
+    if (url) {
+      trackThumbnail(element, url);
+    }
   }
 }
 
@@ -327,30 +387,40 @@ function trackInline(element: Element, url: string, title: string): void {
 }
 
 function trackLink(link: HTMLAnchorElement): void {
-  if (sourceKind(link.href) !== 'direct') return;
+  if (sourceKind(link.href) !== 'direct') {
+    return;
+  }
   trackInline(link, link.href, linkTitle(link, link.href, otherMediaThan(link)));
 }
 
 function trackAudio(audio: HTMLAudioElement): void {
   const url = playableCandidate(mediaSources(audio));
-  if (url) trackInline(audio, url, mediaTitle(audio, url, otherMediaThan(audio)));
+  if (url) {
+    trackInline(audio, url, mediaTitle(audio, url, otherMediaThan(audio)));
+  }
 }
 
 function forgetVideo(video: Element, tracked: TrackedVideo): void {
   tracked.listeners.abort();
   tracked.button.remove();
   intersection?.unobserve(video);
-  if (tracked.fallback) usedFallbacks.delete(tracked.fallback);
+  if (tracked.fallback) {
+    usedFallbacks.delete(tracked.fallback);
+  }
   videos.delete(video);
   scheduleReport();
 }
 
 function forgetDetached(): void {
   for (const [video, tracked] of videos) {
-    if (!video.isConnected) forgetVideo(video, tracked);
+    if (!video.isConnected) {
+      forgetVideo(video, tracked);
+    }
   }
   for (const [element, tracked] of inline) {
-    if (element.isConnected) continue;
+    if (element.isConnected) {
+      continue;
+    }
     tracked.button.remove();
     inline.delete(element);
     scheduleReport();
@@ -359,18 +429,34 @@ function forgetDetached(): void {
 
 function scan(): void {
   forgetDetached();
+  if (declarationsChanged) {
+    declarationsChanged = false;
+    reevaluateStreamed();
+  }
   scanThumbnails();
   for (const video of document.querySelectorAll('video')) {
-    if (videos.size >= MAX_OVERLAYS) break;
-    if (!videos.has(video) && !insideTrackedThumbnail(video)) trackVideo(video);
+    if (videos.size >= MAX_OVERLAYS) {
+      break;
+    }
+    if (!videos.has(video) && !insideTrackedThumbnail(video)) {
+      trackVideo(video);
+    }
   }
   for (const audio of document.querySelectorAll('audio')) {
-    if (inline.size >= MAX_INLINE) break;
-    if (!inline.has(audio)) trackAudio(audio);
+    if (inline.size >= MAX_INLINE) {
+      break;
+    }
+    if (!inline.has(audio)) {
+      trackAudio(audio);
+    }
   }
   for (const link of document.querySelectorAll<HTMLAnchorElement>(LINK_SELECTOR)) {
-    if (inline.size >= MAX_INLINE) break;
-    if (!inline.has(link)) trackLink(link);
+    if (inline.size >= MAX_INLINE) {
+      break;
+    }
+    if (!inline.has(link)) {
+      trackLink(link);
+    }
   }
   schedulePosition();
 }
@@ -385,21 +471,33 @@ function isOwnMutation(mutation: MutationRecord): boolean {
 }
 
 function activate(): void {
-  if (active || retired) return;
+  if (active || retired) {
+    return;
+  }
   active = true;
   intersection = new IntersectionObserver((entries) => {
     for (const entry of entries) {
       const tracked = videos.get(entry.target);
-      if (!tracked) continue;
+      if (!tracked) {
+        continue;
+      }
       tracked.visible = entry.isIntersecting;
-      if (entry.isIntersecting) inspectThumbnail(entry.target, tracked);
+      if (entry.isIntersecting) {
+        inspectThumbnail(entry.target, tracked);
+      }
     }
     schedulePosition();
   });
   observer = new MutationObserver((mutations) => {
-    if (mutations.some((mutation) => !isOwnMutation(mutation))) scheduleScan();
+    const declarations = mutations.some((mutation) => mutation.type === 'attributes');
+    if (declarations) {
+      declarationsChanged = true;
+    }
+    if (declarations || mutations.some((mutation) => !isOwnMutation(mutation))) {
+      scheduleScan();
+    }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: [DOWNLOAD_ATTRIBUTE] });
   window.addEventListener('scroll', schedulePosition, { passive: true, capture: true });
   window.addEventListener('resize', schedulePosition, { passive: true });
   document.addEventListener('fullscreenchange', schedulePosition);
@@ -408,7 +506,9 @@ function activate(): void {
 
 function deactivate(): void {
   stopManifests();
-  if (!active) return;
+  if (!active) {
+    return;
+  }
   active = false;
   observer?.disconnect();
   intersection?.disconnect();
@@ -418,8 +518,12 @@ function deactivate(): void {
   window.removeEventListener('scroll', schedulePosition, { capture: true });
   window.removeEventListener('resize', schedulePosition);
   document.removeEventListener('fullscreenchange', schedulePosition);
-  for (const [video, tracked] of videos) forgetVideo(video, tracked);
-  for (const tracked of inline.values()) tracked.button.remove();
+  for (const [video, tracked] of videos) {
+    forgetVideo(video, tracked);
+  }
+  for (const tracked of inline.values()) {
+    tracked.button.remove();
+  }
   inline.clear();
   usedFallbacks.clear();
   window.clearTimeout(reportTimer);
@@ -427,7 +531,9 @@ function deactivate(): void {
 }
 
 async function start(): Promise<void> {
-  if (!document.body) return;
+  if (!document.body) {
+    return;
+  }
   document.dispatchEvent(new CustomEvent(TAKEOVER_EVENT));
   let stopListening = () => {};
   document.addEventListener(
@@ -452,11 +558,19 @@ async function start(): Promise<void> {
       deactivate();
       return;
     }
+    const wasActive = active;
+    if (streamsAllowed) {
+      watchManifests();
+    } else {
+      stopManifests();
+    }
     activate();
-    if (streamsAllowed) watchManifests();
-    else stopManifests();
-    if (streamsChanged) reevaluateStreamed();
-    for (const tracked of inline.values()) applyInlineVisibility(tracked.button);
+    if (streamsChanged && wasActive) {
+      reevaluateStreamed();
+    }
+    for (const tracked of inline.values()) {
+      applyInlineVisibility(tracked.button);
+    }
     schedulePosition();
   };
   applySettings(await loadSettings());

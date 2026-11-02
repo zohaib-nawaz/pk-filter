@@ -54,14 +54,40 @@ How a file is judged:
 
 Safety: http/https only, localhost / private / link-local IP literals and `.local`-style hosts blocked, final redirect URL re-checked, filenames sanitized with the extension kept, duplicate clicks and already-running URLs rejected.
 
-### Stream downloads (HLS) for allowlisted websites
+### Stream downloads (HLS / DASH) for allowlisted websites
 
-Settings → **Stream downloads (HLS)** takes a list of websites typed in by the user. Only add websites whose videos you own or have permission to download. On those websites (and their subdomains) a streamed player that has no single file gets the same green icon, icon count and popup entry as a normal video:
+Settings → **Stream downloads (HLS / DASH)** takes a list of websites typed in by the user. Only add websites whose videos you own or have permission to download. On those websites (and their subdomains) a streamed player that has no single file gets the same green icon, icon count and popup entry as a normal video:
 
-1. The page script spots the `.m3u8` playlist the player loaded (via the page's resource timing, no extra permission) once the site is in the list.
+1. The page script spots the `.m3u8` (HLS) or `.mpd` (DASH) manifest the player loaded (via the page's resource timing, no extra permission) once the site is in the list.
 2. The background checks the tab's real URL against the list (a page can't claim to be allowlisted), reads the playlist, picks the best quality that has audio built in, and refuses encrypted (`#EXT-X-KEY` other than `NONE`), DRM and live streams. Byte-range playlists (`#EXT-X-BYTERANGE`, one big file split by ranges) are fetched with HTTP `Range` requests.
 3. An offscreen document downloads the segments, 4 at a time with 3 retries each, in order, straight into the browser's private file storage (OPFS), so large videos never sit in memory. The finished file is handed to `chrome.downloads`, then the temporary copy is deleted.
 4. TS streams save as `.ts`, fragmented MP4 as `.mp4`. When the best quality keeps audio in a separate fragmented-MP4 track, a small built-in muxer joins them into one `.mp4` (audio gets its own track id, segments are interleaved). Only separate-audio TS streams, which would need ffmpeg, still save video and audio as two files.
+
+DASH manifests are read by a small built-in XML parser (service workers have no `DOMParser`). Supported: `SegmentTemplate` with `$Number$` (including `%05d` padding), `$Time$` and `SegmentTimeline`, `SegmentList` with byte ranges, and single-file `SegmentBase` representations, which are split into 8 MB range requests after a size check so the file is never held in memory or downloaded twice. Live (`type="dynamic"`), `ContentProtection` (encrypted/DRM) and multi-period manifests are refused. MP4 video plus separate MP4 audio is joined into one file like HLS; WebM tracks save as separate files.
+
+#### Making your own website downloadable
+
+If your player keeps the manifest inside page data (like Facebook does) instead of requesting a visible `.m3u8`/`.mpd`, tell the extension where the download is. Only websites in **Stream domains** are read; everywhere else these hints are ignored. The extension checks, in this order:
+
+1. `data-download-url` on the `<video>` or any of its 5 nearest containers (a direct file, `.m3u8` or `.mpd`). It can be set or changed after the player starts; the extension notices.
+2. `<link rel="alternate" type="application/dash+xml|application/x-mpegURL|video/mp4" href="...">` in the page.
+3. `og:video` when it points to a `.m3u8` or `.mpd`.
+4. The playlist the player was seen loading over the network.
+
+```html
+<div class="player" data-download-url="https://cdn.mysite.com/v/123/master.m3u8?token=SIGNED">
+  <video src="blob:https://mysite.com/..."></video>
+</div>
+
+<link rel="alternate" type="application/dash+xml" href="https://cdn.mysite.com/v/123/manifest.mpd?sig=SIGNED">
+```
+
+Requirements on your side:
+
+- The manifest URL path must end in `.m3u8` or `.mpd` (query strings for signatures are fine).
+- No DRM or `#EXT-X-KEY` / `ContentProtection` encryption, and video-on-demand only (not live).
+- Signed URLs must stay valid for the whole download: the manifest and every segment are fetched over several minutes. Cookies are sent, so session-based access works for logged-in users.
+- No CORS setup is needed; the extension has its own site access once the downloader is enabled.
 
 The Downloads tab shows stream jobs next to normal downloads, with Pause, Resume, Cancel, Retry and Remove. If the browser closes mid-download the job is marked failed and can be retried.
 

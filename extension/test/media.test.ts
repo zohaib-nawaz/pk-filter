@@ -135,3 +135,44 @@ describe('mediaUrlsFromJsonLd', () => {
     expect(mediaUrlsFromJsonLd(JSON.stringify({ '@type': 'Article', contentUrl: 'https://x.com/a.mp4' }))).toEqual([]);
   });
 });
+
+describe('sniffMediaType', () => {
+  const bytes = (...parts: Array<string | number[]>) =>
+    new Uint8Array(parts.flatMap((part) => (typeof part === 'string' ? [...part].map((char) => char.charCodeAt(0)) : part)));
+
+  it('recognises common video and audio files from their first bytes', async () => {
+    const { sniffMediaType } = await import('../src/core/media');
+    expect(sniffMediaType(bytes([0, 0, 0, 0x20], 'ftypisom'))).toBe('video/mp4');
+    expect(sniffMediaType(bytes([0, 0, 0, 0x20], 'ftypqt  '))).toBe('video/quicktime');
+    expect(sniffMediaType(bytes([0, 0, 0, 0x20], 'ftypM4A '))).toBe('audio/mp4');
+    expect(sniffMediaType(bytes([0, 0, 0, 0x20], 'ftyp3gp4'))).toBe('video/3gpp');
+    expect(sniffMediaType(bytes([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x82, 0x84], 'webm'))).toBe('video/webm');
+    expect(sniffMediaType(bytes([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x82, 0x88], 'matroska'))).toBe('video/x-matroska');
+    expect(sniffMediaType(bytes('ID3', [4, 0]))).toBe('audio/mpeg');
+    expect(sniffMediaType(bytes([0xff, 0xfb, 0x90, 0x00]))).toBe('audio/mpeg');
+    expect(sniffMediaType(bytes([0xff, 0xf1, 0x50, 0x80]))).toBe('audio/aac');
+    expect(sniffMediaType(bytes('OggS'))).toBe('audio/ogg');
+    expect(sniffMediaType(bytes('fLaC'))).toBe('audio/flac');
+    expect(sniffMediaType(bytes('RIFF', [0, 0, 0, 0], 'WAVE'))).toBe('audio/wav');
+    expect(sniffMediaType(bytes('RIFF', [0, 0, 0, 0], 'AVI '))).toBe('video/x-msvideo');
+    expect(sniffMediaType(bytes('FLV', [1]))).toBe('video/x-flv');
+    const ts = new Uint8Array(192);
+    ts[0] = 0x47;
+    ts[188] = 0x47;
+    expect(sniffMediaType(ts)).toBe('video/mp2t');
+  });
+
+  it('does not mistake web pages or empty bodies for media', async () => {
+    const { sniffMediaType } = await import('../src/core/media');
+    expect(sniffMediaType(bytes('<!doctype html><html>'))).toBeNull();
+    expect(sniffMediaType(bytes('{"ok":true}'))).toBeNull();
+    expect(sniffMediaType(new Uint8Array())).toBeNull();
+  });
+
+  it('trusts the file bytes when the server reports a wrong or generic type', () => {
+    expect(response({ contentType: 'text/html', url: 'https://cdn.example.com/watch/123', sniffed: 'video/mp4', contentRange: 'bytes 0-191/4000000' })).toMatchObject({ status: 'downloadable', extension: 'mp4', sizeBytes: 4000000 });
+    expect(response({ contentType: 'application/octet-stream', url: 'https://cdn.example.com/file', sniffed: 'video/webm' })).toMatchObject({ status: 'downloadable', extension: 'webm' });
+    expect(response({ contentType: 'text/html', url: 'https://cdn.example.com/page', sniffed: null }).status).toBe('unsupported');
+    expect(response({ contentType: 'video/mp4', sniffed: 'audio/mpeg' }).extension).toBe('mp4');
+  });
+});

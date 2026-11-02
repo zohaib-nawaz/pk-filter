@@ -1,7 +1,7 @@
 import { matchesStreamDomain } from '../core/hls';
 import { extensionFromPath, safeHttpUrl } from '../core/media';
 import type { Request, ResponseMap } from '../core/messages';
-import { clearCache, countCache, loadSettings, readSync, requestRefresh } from '../shared/storage';
+import { clearCache, countCache, loadSettings, readSync, requestRefresh, writeSync } from '../shared/storage';
 import { getServiceStatus } from './api-client';
 import { checkDomains, lookupCached, resetBackoff } from './checker';
 import { startDownload, watchDownloads } from './download-manager';
@@ -14,6 +14,7 @@ import { syncVideoSites } from './video-sites';
 const SIMPLE_TYPES = ['overview', 'refresh', 'clear-cache', 'sync-video-sites'];
 const OFFSCREEN_EVENTS = ['stream-progress', 'stream-track-ready', 'stream-failed', 'stream-split'];
 const STREAM_ACTIONS = ['pause', 'resume', 'cancel', 'retry', 'remove'];
+const STREAM_EXTENSIONS = ['m3u8', 'mpd'];
 
 function isStringList(value: unknown, max: number): value is string[] {
   return Array.isArray(value) && value.length <= max && value.every((item) => typeof item === 'string');
@@ -42,11 +43,21 @@ function isRequest(value: unknown, sender: chrome.runtime.MessageSender): value 
     id?: unknown;
     action?: unknown;
   } | null;
-  if (!message || typeof message.type !== 'string') return false;
-  if (OFFSCREEN_EVENTS.includes(message.type)) return sender.url === chrome.runtime.getURL('offscreen.html') && typeof message.id === 'string';
-  if (message.type === 'stream-control') return !sender.tab && typeof message.id === 'string' && STREAM_ACTIONS.includes(message.action as string);
-  if (message.type === 'check' || message.type === 'lookup') return isStringList(message.domains, 100);
-  if (message.type === 'inspect-media') return typeof message.url === 'string' && message.url.length <= 4096;
+  if (!message || typeof message.type !== 'string') {
+    return false;
+  }
+  if (OFFSCREEN_EVENTS.includes(message.type)) {
+    return sender.url === chrome.runtime.getURL('offscreen.html') && typeof message.id === 'string';
+  }
+  if (message.type === 'stream-control') {
+    return !sender.tab && typeof message.id === 'string' && STREAM_ACTIONS.includes(message.action as string);
+  }
+  if (message.type === 'check' || message.type === 'lookup') {
+    return isStringList(message.domains, 100);
+  }
+  if (message.type === 'inspect-media') {
+    return typeof message.url === 'string' && message.url.length <= 4096;
+  }
   if (message.type === 'download') {
     const pageUrl = (message as { pageUrl?: unknown }).pageUrl;
     return (
@@ -56,8 +67,12 @@ function isRequest(value: unknown, sender: chrome.runtime.MessageSender): value 
       (pageUrl === undefined || typeof pageUrl === 'string')
     );
   }
-  if (message.type === 'page-videos') return Array.isArray(message.videos) && message.videos.length <= 50 && message.videos.every(isPageVideo);
-  if (message.type === 'tab-videos') return Number.isInteger(message.tabId);
+  if (message.type === 'page-videos') {
+    return Array.isArray(message.videos) && message.videos.length <= 50 && message.videos.every(isPageVideo);
+  }
+  if (message.type === 'tab-videos') {
+    return Number.isInteger(message.tabId);
+  }
   return SIMPLE_TYPES.includes(message.type);
 }
 
@@ -65,7 +80,9 @@ async function streamPage(url: string, sender: chrome.runtime.MessageSender, cla
   const pageUrl = sender.tab ? sender.tab.url : claimedPageUrl;
   const target = safeHttpUrl(url);
   const page = safeHttpUrl(pageUrl);
-  if (!target || !page || extensionFromPath(target) !== 'm3u8') return null;
+  if (!target || !page || !STREAM_EXTENSIONS.includes(extensionFromPath(target) ?? '')) {
+    return null;
+  }
   const settings = await loadSettings();
   return settings.videoDownloader && matchesStreamDomain(page.hostname, settings.streamDomains) ? page.toString() : null;
 }
@@ -82,7 +99,9 @@ async function handle(request: Request, sender: chrome.runtime.MessageSender): P
     case 'stream-control':
       return controlStreamJob(request.id, request.action);
     case 'page-videos':
-      if (tabId === undefined) return { ok: false };
+      if (tabId === undefined) {
+        return { ok: false };
+      }
       await setPageVideos(tabId, request.videos);
       return { ok: true };
     case 'tab-videos':
@@ -102,6 +121,11 @@ async function handle(request: Request, sender: chrome.runtime.MessageSender): P
       return { ok: await syncVideoSites() };
     case 'overview': {
       const [cachedDomains, sync, service] = await Promise.all([countCache(Date.now()), readSync(), getServiceStatus()]);
+      if (service.online && sync.lastError) {
+        resetBackoff();
+        await writeSync({ lastError: null });
+        return { cachedDomains, sync: { ...sync, lastError: null }, service };
+      }
       return { cachedDomains, sync, service };
     }
     case 'refresh':
@@ -123,7 +147,9 @@ watchTabs();
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id || !isRequest(message, sender)) return false;
+  if (sender.id !== chrome.runtime.id || !isRequest(message, sender)) {
+    return false;
+  }
   handle(message, sender)
     .then(sendResponse)
     .catch(() => sendResponse(null));
@@ -141,7 +167,9 @@ chrome.runtime.onInstalled.addListener(() => {
   syncDownloader(true);
 });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync' && changes.settings) syncDownloader();
+  if (area === 'sync' && changes.settings) {
+    syncDownloader();
+  }
 });
 watchDownloads();
 watchStreamDownloads();

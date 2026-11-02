@@ -145,6 +145,46 @@ export interface MediaResponse {
   contentType: string | null;
   contentLength: string | null;
   contentRange: string | null;
+  sniffed?: string | null;
+}
+
+export const SNIFF_BYTES = 192;
+
+function text(bytes: Uint8Array, start: number, length: number): string {
+  return String.fromCharCode(...bytes.subarray(start, start + length));
+}
+
+function startsWith(bytes: Uint8Array, signature: number[]): boolean {
+  return signature.every((value, index) => bytes[index] === value);
+}
+
+function sniffMpegAudio(bytes: Uint8Array): string | null {
+  if (text(bytes, 0, 3) === 'ID3') return 'audio/mpeg';
+  if (bytes[0] !== 0xff || bytes.length < 2) return null;
+  const second = bytes[1] as number;
+  if ((second & 0xf6) === 0xf0) return 'audio/aac';
+  if ((second & 0xe0) === 0xe0 && ((second >> 1) & 0x03) !== 0) return 'audio/mpeg';
+  return null;
+}
+
+export function sniffMediaType(bytes: Uint8Array): string | null {
+  if (bytes.length >= 12 && text(bytes, 4, 4) === 'ftyp') {
+    const brand = text(bytes, 8, 4);
+    if (brand === 'M4A ' || brand === 'M4B ') return 'audio/mp4';
+    if (brand === 'qt  ') return 'video/quicktime';
+    if (brand.startsWith('3g')) return 'video/3gpp';
+    return 'video/mp4';
+  }
+  if (startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3])) return text(bytes, 0, 64).includes('webm') ? 'video/webm' : 'video/x-matroska';
+  if (text(bytes, 0, 4) === 'OggS') return 'audio/ogg';
+  if (text(bytes, 0, 4) === 'fLaC') return 'audio/flac';
+  if (text(bytes, 0, 3) === 'FLV') return 'video/x-flv';
+  if (text(bytes, 0, 4) === 'RIFF' && text(bytes, 8, 4) === 'WAVE') return 'audio/wav';
+  if (text(bytes, 0, 4) === 'RIFF' && text(bytes, 8, 4) === 'AVI ') return 'video/x-msvideo';
+  if (startsWith(bytes, [0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11])) return 'video/x-ms-wmv';
+  if (startsWith(bytes, [0x00, 0x00, 0x01, 0xba])) return 'video/mpeg';
+  if (bytes[0] === 0x47 && bytes.length > 188 && bytes[188] === 0x47) return 'video/mp2t';
+  return sniffMpegAudio(bytes);
 }
 
 const UNAVAILABLE: Record<number, string> = {
@@ -162,7 +202,9 @@ export function classifyMediaResponse(response: MediaResponse): MediaInfo {
   if (response.status >= 500) return { ...base, status: 'unavailable', reason: 'The video server returned an error' };
   if (response.status >= 400 || response.status < 200) return { ...base, status: 'unavailable', reason: `Video server answered ${response.status}` };
 
-  const mime = response.contentType?.split(';')[0]?.trim().toLowerCase() ?? null;
+  const declared = response.contentType?.split(';')[0]?.trim().toLowerCase() ?? null;
+  const declaredIsMedia = declared !== null && (declared.startsWith('video/') || declared.startsWith('audio/') || STREAMING_MIMES.includes(declared));
+  const mime = declaredIsMedia ? declared : (response.sniffed ?? declared);
   const pathExtension = extensionFromPath(finalUrl);
   const sizeBytes = parseSize(response.contentLength, response.contentRange);
   if (mime && STREAMING_MIMES.includes(mime)) {

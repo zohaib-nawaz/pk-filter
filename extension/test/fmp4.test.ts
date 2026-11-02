@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { interleave, mergeInitSegments, retagFragment } from '../src/core/fmp4';
+import { interleave, mergeInitSegments, parseSidx, retagFragment } from '../src/core/fmp4';
 import { canCombine, type StreamTrack } from '../src/core/hls';
 import { newStreamJob } from '../src/core/stream-jobs';
 
@@ -98,5 +98,27 @@ describe('combining tracks', () => {
 
   it('interleaves video and audio segments so playback stays in sync', () => {
     expect(interleave(['v1', 'v2', 'v3'], ['a1', 'a2', 'a3', 'a4'])).toEqual(['v1', 'a1', 'v2', 'a2', 'v3', 'a3', 'a4']);
+  });
+});
+
+describe('parseSidx', () => {
+  const sidx = (references: number[], firstOffset = 0, hierarchical = false) => {
+    const refs = references.flatMap((size) => [...uint32((hierarchical ? 0x80000000 : 0) | size), ...uint32(1000), ...uint32(0x90000000)]);
+    return fullBox('sidx', new Uint8Array([...uint32(1), ...uint32(1000), ...uint32(0), ...uint32(firstOffset), 0, 0, 0, references.length, ...refs]));
+  };
+
+  it('turns the index into exact fragment byte ranges in the file', () => {
+    const box = sidx([500, 700, 300]);
+    expect(parseSidx(box, 1000)).toEqual([
+      { start: 1000 + box.length, end: 1000 + box.length + 499 },
+      { start: 1000 + box.length + 500, end: 1000 + box.length + 1199 },
+      { start: 1000 + box.length + 1200, end: 1000 + box.length + 1499 },
+    ]);
+    expect(parseSidx(sidx([100], 16), 0)?.[0]?.start).toBe(sidx([100], 16).length + 16);
+  });
+
+  it('gives up on nested indexes and missing boxes so the caller can fall back', () => {
+    expect(parseSidx(sidx([100], 0, true), 0)).toBeNull();
+    expect(parseSidx(new Uint8Array([0, 0, 0, 8, 102, 114, 101, 101]), 0)).toBeNull();
   });
 });

@@ -132,3 +132,27 @@ export function interleave<T>(first: T[], second: T[]): T[] {
   }
   return out;
 }
+
+export function parseSidx(bytes: Uint8Array, offsetInFile: number): Array<{ start: number; end: number }> | null {
+  const sidx = find(readBoxes(bytes), 'sidx');
+  if (!sidx) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const content = sidx.start + sidx.header;
+  const version = bytes[content];
+  let at = content + 12;
+  const firstOffset = version === 0 ? view.getUint32(at + 4) : Number(view.getBigUint64(at + 8));
+  at += version === 0 ? 8 : 16;
+  const count = view.getUint16(at + 2);
+  at += 4;
+  let start = offsetInFile + sidx.start + sidx.size + firstOffset;
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (let index = 0; index < count; index += 1) {
+    const reference = view.getUint32(at);
+    if (reference >>> 31 === 1) return null;
+    const size = reference & 0x7fffffff;
+    ranges.push({ start, end: start + size - 1 });
+    start += size;
+    at += 12;
+  }
+  return ranges;
+}

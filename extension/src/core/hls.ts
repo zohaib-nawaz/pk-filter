@@ -15,6 +15,7 @@ export interface HlsMaster {
 export interface StreamSegment {
   url: string;
   range: { start: number; end: number } | null;
+  index?: { start: number; end: number };
 }
 
 export interface HlsMedia {
@@ -154,8 +155,10 @@ export function streamProblem(media: HlsMedia): string | null {
   return null;
 }
 
+const COMBINABLE_EXTENSIONS = new Set(['mp4', 'm4a']);
+
 export function canCombine(tracks: StreamTrack[]): boolean {
-  return tracks.length === 2 && tracks.every((track) => track.init !== null);
+  return tracks.length === 2 && tracks.every((track) => track.init !== null && COMBINABLE_EXTENSIONS.has(track.extension));
 }
 
 export function estimateBytes(bandwidth: number, durationSeconds: number): number | null {

@@ -9,7 +9,8 @@ function installChrome(messages: Message[], extra: Record<string, unknown> = {})
       sendMessage: async (message: Message) => {
         messages.push(message);
         if (message.type !== 'inspect-media') return { ok: true };
-        if (message.url?.endsWith('.m3u8')) {
+        const path = message.url ? new URL(message.url).pathname : '';
+        if (path.endsWith('.m3u8') || path.endsWith('.mpd')) {
           return { status: 'downloadable', url: message.url, extension: 'ts', mime: 'application/vnd.apple.mpegurl', sizeBytes: 5000, reason: 'HLS stream' };
         }
         const extension = /\.(mp4|mp3)$/.exec(message.url ?? '')?.[1];
@@ -142,6 +143,78 @@ describe('video page detection', () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(messages.filter((m) => m.type === 'inspect-media')).toEqual([]);
     expect(messages.filter((m) => m.type === 'page-videos').flatMap((m) => m.videos ?? [])).toEqual([]);
+    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    vi.restoreAllMocks();
+  });
+
+  it('downloads DASH players through their .mpd manifest on allowlisted sites', async () => {
+    document.head.innerHTML = '';
+    document.body.innerHTML = '<video src="blob:https://learn.example.org/dash"></video>';
+    installPerformance(['https://cdn.example.org/app.js', 'https://cdn.example.org/v/manifest.mpd']);
+    const messages: Message[] = [];
+    installChrome(messages, { streamDomains: ['example.org'] });
+    await import('../src/content/video-page');
+    await vi.waitFor(() => expect(messages.some((m) => m.type === 'page-videos')).toBe(true), { timeout: 2000 });
+    expect(messages.filter((m) => m.type === 'inspect-media').map((m) => m.url)).toEqual(['https://cdn.example.org/v/manifest.mpd']);
+    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    vi.restoreAllMocks();
+  });
+
+  async function runPage(head: string, body: string, network: string[], domains: string[]) {
+    document.head.innerHTML = head;
+    document.body.innerHTML = body;
+    installPerformance(network);
+    const messages: Message[] = [];
+    installChrome(messages, { streamDomains: domains });
+    await import('../src/content/video-page');
+    return messages;
+  }
+
+  const inspected = (messages: Message[]) => messages.filter((m) => m.type === 'inspect-media').map((m) => m.url);
+
+  it('uses a download link the site declares on the player container', async () => {
+    const messages = await runPage(
+      '',
+      '<div class="player" data-download-url="https://cdn.example.org/v/master.m3u8?token=abc"><video src="blob:https://learn.example.org/x"></video></div>',
+      [],
+      ['example.org'],
+    );
+    await vi.waitFor(() => expect(inspected(messages)).toEqual(['https://cdn.example.org/v/master.m3u8?token=abc']), { timeout: 2000 });
+    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    vi.restoreAllMocks();
+  });
+
+  it('uses a declared alternate DASH link and prefers declarations over network guesses', async () => {
+    const messages = await runPage(
+      '<link rel="alternate" type="application/dash+xml" href="https://cdn.example.org/v/stream.mpd?sig=1">',
+      '<video src="blob:https://learn.example.org/y"></video>',
+      ['https://cdn.example.org/ads/preroll.m3u8'],
+      ['example.org'],
+    );
+    await vi.waitFor(() => expect(inspected(messages)).toEqual(['https://cdn.example.org/v/stream.mpd?sig=1']), { timeout: 2000 });
+    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    vi.restoreAllMocks();
+  });
+
+  it('ignores declarations on sites that are not in the stream list', async () => {
+    const messages = await runPage(
+      '<link rel="alternate" type="application/dash+xml" href="https://cdn.example.org/v/stream.mpd">',
+      '<div data-download-url="https://cdn.example.org/v/master.m3u8"><video src="blob:https://learn.example.org/z"></video></div>',
+      [],
+      ['other-site.com'],
+    );
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(inspected(messages)).toEqual([]);
+    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    vi.restoreAllMocks();
+  });
+
+  it('picks up a download link the site adds after the player starts', async () => {
+    const messages = await runPage('', '<div class="player"><video src="blob:https://learn.example.org/late"></video></div>', [], ['example.org']);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(inspected(messages)).toEqual([]);
+    document.querySelector('.player')?.setAttribute('data-download-url', 'https://cdn.example.org/v/late.mpd');
+    await vi.waitFor(() => expect(inspected(messages)).toEqual(['https://cdn.example.org/v/late.mpd']), { timeout: 3000 });
     document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
     vi.restoreAllMocks();
   });

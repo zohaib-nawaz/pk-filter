@@ -27,7 +27,9 @@ function unavailable(domain: string): CheckResult {
 }
 
 async function fetchBatch(domains: string[]): Promise<Map<string, CheckResult>> {
-  if (Date.now() < pausedUntil) return new Map();
+  if (Date.now() < pausedUntil) {
+    return new Map();
+  }
   try {
     const results = await postCheck(domains);
     failures = 0;
@@ -38,7 +40,8 @@ async function fetchBatch(domains: string[]): Promise<Map<string, CheckResult>> 
   } catch (error) {
     failures += 1;
     pausedUntil = Date.now() + backoffDelay(failures);
-    await writeSync({ lastError: error instanceof Error ? error.message : 'Checking service unreachable' });
+    const unreachable = error instanceof TypeError || (error instanceof DOMException && error.name === 'TimeoutError');
+    await writeSync({ lastError: unreachable || !(error instanceof Error) ? 'Could not reach the checking service' : error.message });
     return new Map();
   }
 }
@@ -74,6 +77,8 @@ export async function checkDomains(input: string[]): Promise<Record<string, Chec
   const fresh = await Promise.all(
     domains.filter((domain) => !cached[domain]).map(async (domain) => (await inflight.get(domain)) ?? unavailable(domain)),
   );
-  if (Math.random() < 0.1) void pruneCache(now);
+  if (Math.random() < 0.1) {
+    void pruneCache(now);
+  }
   return { ...cached, ...Object.fromEntries(fresh.map((result) => [result.domain, result])) };
 }
