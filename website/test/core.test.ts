@@ -63,3 +63,45 @@ describe('checkView', () => {
     expect(checkView({ domain: 'x.com', country: 'PK', countrySource: 'ip', measuredBy: 'probe', result: null })).toBeNull();
   });
 });
+
+describe('video lookup', () => {
+  it('turns formats into rows with sound labels, sizes and download links', async () => {
+    const { formatRows, lookupSummary, lookupVideo } = await import('../src/core/media-api');
+    vi.stubGlobal('fetch', async () =>
+      new Response(
+        JSON.stringify({
+          title: 'Launch',
+          source: 'hls',
+          durationSeconds: 125,
+          formats: [
+            { label: '1080p', detail: '1920x1080 · 5.0 Mbps · MP4', height: 1080, sizeBytes: 78_125_000, exactSize: false, container: 'mp4', audio: 'included', token: 'abc' },
+            { label: 'Audio only', detail: 'M4A', height: null, sizeBytes: null, exactSize: false, container: 'm4a', audio: 'only', token: 'def' },
+          ],
+          thumbnail: 'thumb-token',
+          preview: null,
+        }),
+      ),
+    );
+    const lookup = await lookupVideo('https://example.com/v');
+    expect(lookupSummary(lookup)).toBe('HLS stream · 2:05 · 2 formats');
+    const rows = formatRows(lookup);
+    expect(rows[0]).toMatchObject({ label: '1080p', size: 'about 75 MB', audio: { text: 'With sound' } });
+    expect(rows[0]?.href).toBe('http://localhost:8787/api/v1/media/download?t=abc');
+    expect(rows[1]).toMatchObject({ size: 'Size unknown', audio: { text: 'Audio only' } });
+    expect(lookup.preview).toEqual({ thumbnailUrl: 'http://localhost:8787/api/v1/media/thumbnail?t=thumb-token', mediaUrl: null, audioOnly: false });
+  });
+
+  it('shows the server reason when a site is refused', async () => {
+    const { lookupVideo } = await import('../src/core/media-api');
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'restricted', message: 'This website does not allow downloads, so it is not supported' }), { status: 403 }));
+    await expect(lookupVideo('https://youtube.com/watch?v=1')).rejects.toThrow('does not allow downloads');
+  });
+});
+
+describe('checker refusals', () => {
+  it('explains names the service will not check', async () => {
+    const { checkSite } = await import('../src/core/check-api');
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ results: [], rejected: ['foo.local'], country: 'PK', countrySource: 'chosen', measuredBy: 'probe' })));
+    await expect(checkSite('foo.local', 'PK')).rejects.toThrow('does not look like a public website');
+  });
+});

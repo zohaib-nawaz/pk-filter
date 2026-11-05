@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 function numberFrom(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return value && Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -18,6 +20,13 @@ function peerFrom(entry: string): PeerProbe {
     return { country: null, url: entry };
   }
   return { country: (match[1] as string).toUpperCase(), url: match[2] as string };
+}
+
+function secretFrom(value: string | undefined): string {
+  if (value && value.length >= 32) {
+    return value;
+  }
+  return randomBytes(32).toString('hex');
 }
 
 export const config = {
@@ -41,6 +50,15 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL ?? '',
   peerProbes: listFrom(process.env.PEER_PROBES).map(peerFrom),
   geoipDb: process.env.GEOIP_DB ?? '',
+  media: {
+    enabled: process.env.MEDIA_DOWNLOADS !== 'false',
+    secret: secretFrom(process.env.MEDIA_SECRET),
+    secretConfigured: Boolean(process.env.MEDIA_SECRET && process.env.MEDIA_SECRET.length >= 32),
+    maxBytes: numberFrom(process.env.MEDIA_MAX_MB, 4096) * 1024 * 1024,
+    maxConcurrent: numberFrom(process.env.MEDIA_MAX_CONCURRENT, 6),
+    maxPerClient: numberFrom(process.env.MEDIA_MAX_PER_CLIENT, 2),
+    ticketTtlMs: 6 * 3_600_000,
+  },
   corsOrigins: listFrom(process.env.CORS_ORIGINS ?? 'http://localhost:3180'),
   probeToken: process.env.PROBE_TOKEN ?? '',
   maxDomainsPerRequest: 20,

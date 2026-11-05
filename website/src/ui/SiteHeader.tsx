@@ -28,7 +28,10 @@ export function SiteHeader({ links, repoUrl }: SiteHeaderProps) {
           >
             GitHub
           </a>
-          <a href="/#install" className="rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
+          <a
+            href="/#install"
+            className="hidden rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold whitespace-nowrap text-white shadow-sm hover:bg-emerald-700 sm:inline-flex"
+          >
             Get the extension
           </a>
           <details className="relative md:hidden">
@@ -43,6 +46,9 @@ export function SiteHeader({ links, repoUrl }: SiteHeaderProps) {
                   {link.label}
                 </a>
               ))}
+              <a href="/#install" className="mt-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                Get the extension
+              </a>
             </nav>
           </details>
         </div>

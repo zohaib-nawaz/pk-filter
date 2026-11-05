@@ -1,8 +1,11 @@
+import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 
-const MIGRATIONS_DIR = fileURLToPath(new URL('../../migrations/', import.meta.url));
+const HERE = fileURLToPath(new URL('.', import.meta.url));
+const MIGRATIONS_DIR = `${[resolve(HERE, '../migrations'), resolve(HERE, '../../migrations')].find((dir) => existsSync(dir)) || resolve(HERE, '../migrations')}/`;
 
 export async function migrate(pool: pg.Pool): Promise<string[]> {
   await pool.query(

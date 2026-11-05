@@ -423,7 +423,27 @@ function muxedAudio(rep: DashRep): boolean {
   return /mp4a|opus|vorbis/i.test(rep.codecs);
 }
 
-export function planFromDash(xml: string, baseUrl: string, maxHeight = Number.POSITIVE_INFINITY): StreamPlan {
+export interface DashRendition {
+  index: number;
+  id: string;
+  kind: StreamTrack['kind'];
+  bandwidth: number;
+  width: number;
+  height: number;
+  codecs: string;
+  mime: string;
+  hasAudio: boolean;
+  joinable: boolean;
+}
+
+interface DashDocument {
+  period: XmlNode;
+  base: string;
+  durationSeconds: number;
+  reps: DashRep[];
+}
+
+function readDash(xml: string, baseUrl: string): DashDocument {
   const root = parseXml(xml);
   if (root.name !== 'mpd') {
     throw new Error('This is not a DASH stream');
@@ -448,7 +468,42 @@ export function planFromDash(xml: string, baseUrl: string, maxHeight = Number.PO
     const parsed = representation(adapt, rep, base, durationSeconds);
     return parsed ? [parsed] : [];
   }));
-  const video = best(reps, 'video', maxHeight) ?? best(reps, 'audio');
+  return { period, base, durationSeconds, reps };
+}
+
+function isJoinable(rep: DashRep): boolean {
+  const [only] = rep.segments;
+  const wholeFile = rep.segments.length === 1 && only !== undefined && only.range !== null && only.range.end === REST_OF_FILE;
+  return rep.init !== null && (!wholeFile || only.index !== undefined);
+}
+
+export function dashRenditions(xml: string, baseUrl: string): { durationSeconds: number; renditions: DashRendition[] } {
+  const { durationSeconds, reps } = readDash(xml, baseUrl);
+  const renditions = reps.map((rep, index) => ({
+    index,
+    id: rep.id,
+    kind: rep.kind,
+    bandwidth: rep.bandwidth,
+    width: rep.width,
+    height: rep.height,
+    codecs: rep.codecs,
+    mime: rep.mime,
+    hasAudio: rep.kind === 'audio' || muxedAudio(rep),
+    joinable: isJoinable(rep),
+  }));
+  return { durationSeconds, renditions };
+}
+
+function chooseVideo(reps: DashRep[], maxHeight: number, videoIndex: number | undefined): DashRep | undefined {
+  if (videoIndex !== undefined) {
+    return reps[videoIndex];
+  }
+  return best(reps, 'video', maxHeight) ?? best(reps, 'audio');
+}
+
+export function planFromDash(xml: string, baseUrl: string, maxHeight = Number.POSITIVE_INFINITY, videoIndex?: number): StreamPlan {
+  const { period, base, durationSeconds, reps } = readDash(xml, baseUrl);
+  const video = chooseVideo(reps, maxHeight, videoIndex);
   if (!video) {
     throw new Error('This stream has no video segments');
   }

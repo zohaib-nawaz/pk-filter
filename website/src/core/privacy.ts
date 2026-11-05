@@ -42,7 +42,8 @@ export const POLICY: PolicySection[] = [
   {
     title: 'Downloads',
     paragraphs: [
-      'Videos download straight from the website to your computer through your browser. Nothing passes through our servers. The download list stays in your browser.',
+      'In the extension, videos download straight from the website to your computer through your browser. Nothing passes through our servers, and the download list stays in your browser.',
+      'On this website’s video downloader, our server fetches the video from the link you paste and streams it to you. The link is kept in memory for a few minutes and inside an encrypted download link; it is never written to disk or to our logs.',
     ],
   },
   {

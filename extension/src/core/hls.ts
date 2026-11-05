@@ -82,16 +82,23 @@ function resolve(uri: string | undefined, base: string): string | null {
 }
 
 function audioGroups(lines: string[], base: string): Map<string, string> {
-  const groups = new Map<string, string>();
+  const chosen = new Map<string, { uri: string | null; isDefault: boolean }>();
   for (const line of lines.filter((item) => item.startsWith('#EXT-X-MEDIA:'))) {
     const media = attributes(line);
-    const uri = resolve(media.URI, base);
     const group = media['GROUP-ID'];
-    if (media.TYPE !== 'AUDIO' || !uri || !group) {
+    if (media.TYPE !== 'AUDIO' || !group) {
       continue;
     }
-    if (!groups.has(group) || media.DEFAULT === 'YES') {
-      groups.set(group, uri);
+    const isDefault = media.DEFAULT === 'YES';
+    const current = chosen.get(group);
+    if (!current || (isDefault && !current.isDefault)) {
+      chosen.set(group, { uri: resolve(media.URI, base), isDefault });
+    }
+  }
+  const groups = new Map<string, string>();
+  for (const [group, entry] of chosen) {
+    if (entry.uri) {
+      groups.set(group, entry.uri);
     }
   }
   return groups;
@@ -191,7 +198,7 @@ export function parsePlaylist(text: string, baseUrl: string): HlsPlaylist | null
   return lines.some((line) => line.startsWith('#EXT-X-STREAM-INF:')) ? parseMaster(lines, baseUrl) : parseMedia(lines, baseUrl);
 }
 
-function isAudioOnly(variant: HlsVariant): boolean {
+export function isAudioOnlyVariant(variant: HlsVariant): boolean {
   return variant.resolution === null && variant.codecs !== '' && !VIDEO_CODEC.test(variant.codecs);
 }
 
@@ -228,7 +235,7 @@ export function capByHeight<T>(items: T[], maxHeight: number, height: (item: T) 
 }
 
 function rankVariants(master: HlsMaster, maxHeight: number): HlsVariant[] {
-  const video = master.variants.filter((variant) => !isAudioOnly(variant));
+  const video = master.variants.filter((variant) => !isAudioOnlyVariant(variant));
   const candidates = capByHeight(video.length > 0 ? video : master.variants, maxHeight, (variant) => heightOf(variant.resolution));
   return [...candidates].sort((a, b) => b.bandwidth - a.bandwidth || Number(a.audioUri !== null) - Number(b.audioUri !== null));
 }

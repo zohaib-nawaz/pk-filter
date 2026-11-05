@@ -30,6 +30,7 @@ export type IconName = 'badge' | 'filter' | 'globe' | 'network' | 'alert' | 'cur
 export const NAV_LINKS: NavLink[] = [
   { label: 'Features', href: '/#features' },
   { label: 'Check a site', href: '/#check' },
+  { label: 'Download video', href: '/download.html' },
   { label: 'How it works', href: '/#how' },
   { label: 'Install', href: '/#install' },
   { label: 'FAQ', href: '/#faq' },
@@ -167,4 +168,18 @@ export const FAQ: Question[] = [
     answer:
       'All of them. Pakistan has live test servers on local ISPs; any country can add one. Elsewhere, results come from OONI volunteer measurements and your own connection.',
   },
+];
+
+export const DOWNLOAD_SUPPORT = [
+  'Direct video and audio links (MP4, WebM, MOV, MKV, MP3, M4A and more).',
+  'Pages that publish their video, through the player, og:video, schema.org or a download link.',
+  'HLS (.m3u8) and DASH (.mpd) streams, with every quality listed.',
+  'MP4 streams with separate sound are joined into one file.',
+];
+
+export const DOWNLOAD_LIMITS = [
+  'YouTube, Facebook, Instagram, TikTok, X, Vimeo and other platforms that do not allow downloads.',
+  'Netflix and any DRM-protected or encrypted video.',
+  'Adult video sites.',
+  'Live streams, and videos larger than the server limit.',
 ];

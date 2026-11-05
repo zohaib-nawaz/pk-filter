@@ -59,7 +59,7 @@ function renderLinks(links: CheckView['links']) {
 
 export function CheckResultCard({ view }: { view: CheckView }) {
   return (
-    <article className="flex flex-col gap-5 rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900" aria-live="polite">
+    <article className="flex flex-col gap-5 rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-neutral-900">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-semibold break-all">{view.headline}</h3>
         <StatusBadge label={view.status.label} color={view.status.color} size="md" />

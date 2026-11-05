@@ -34,6 +34,15 @@ describe('parsePlaylist', () => {
     expect(parsed.variants[2]?.resolution).toBe('1280x720');
   });
 
+  it('treats audio as muxed when the default rendition has no separate playlist', () => {
+    const muxedDefault = `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Main",DEFAULT=YES
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Alt",DEFAULT=NO,URI="alt/audio.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720,AUDIO="a"
+720.m3u8`;
+    expect((parsePlaylist(muxedDefault, BASE) as HlsMaster).variants[0]?.audioUri).toBeNull();
+  });
+
   it('picks the best quality and keeps the best muxed one as a fallback', () => {
     expect(pickVariant(parsePlaylist(master, BASE) as HlsMaster)?.uri).toBe('https://cdn.example.com/show/hd/index.m3u8');
     expect(pickMuxedVariant(parsePlaylist(master, BASE) as HlsMaster)?.uri).toBe('https://cdn.example.com/show/mid/index.m3u8');

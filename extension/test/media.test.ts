@@ -60,6 +60,9 @@ describe('filenames', () => {
   it('sanitizes titles and keeps the extension', () => {
     expect(buildFilename('My <Video>: part 1/2?', 'mp4')).toBe('My Video part 1 2.mp4');
     expect(buildFilename('../../etc/passwd', 'webm')).toBe('etc passwd.webm');
+    const emojiName = buildFilename(`${'a'.repeat(119)}😀 tail`, 'mp4');
+    expect(() => encodeURIComponent(emojiName)).not.toThrow();
+    expect(emojiName).toBe(`${'a'.repeat(119)}😀.mp4`);
     expect(buildFilename('clip.mp4', 'MP4')).toBe('clip.mp4');
     expect(buildFilename('   ', 'mov')).toBe('video.mov');
     expect(buildFilename('CON', 'mp4')).toBe('video.mp4');

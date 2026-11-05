@@ -140,6 +140,20 @@ cd website && npm install
 cd website && npm run build
 ```
 
+### Video download route
+
+The website's **Download video** page (`download.html`) takes any link and lists every quality the video offers (144p to 4K), with size and whether it has sound:
+
+- `POST /api/v1/media/formats` `{ "url": "…" }` follows the link. A direct media file gives one format; an HLS master playlist or DASH manifest gives one format per quality plus "Audio only"; a normal web page is searched for its player source, `data-download-url`, `<link rel=alternate>`, `og:video`, schema.org `contentUrl` and `.m3u8`/`.mpd`/`.mp4` URLs in its scripts.
+- Each format carries a signed token (HMAC with `MEDIA_SECRET`, valid 30 minutes) instead of the URL, so the download route can't be used to fetch arbitrary addresses.
+- The lookup also returns a **preview**: the page's thumbnail (video `poster`, `og:image`, `twitter:image` or schema.org `thumbnailUrl`), served through `GET /api/v1/media/thumbnail?t=…` (JPEG, PNG, WebP, GIF or AVIF only, up to 5 MB, never SVG), and for direct files a small inline player through `GET /api/v1/media/preview?t=…` (same stream as the download, `inline`, with byte ranges for seeking, on its own small pool of slots). Streams without a page show a placeholder with the best quality.
+- `GET /api/v1/media/download?t=…` streams the file with `Content-Disposition: attachment`. HLS and DASH segments are fetched 4 at a time with retries; fragmented MP4 video with separate sound is joined into one MP4 by the same muxer the extension uses; TS streams save as `.ts`; DASH single-file renditions are split by their `sidx` index when they need joining.
+- Every request (link, redirect, playlist, segment) is checked against private and reserved addresses and pinned to the resolved IP. Downloads are limited by `MEDIA_MAX_MB` (default 4096), `MEDIA_MAX_CONCURRENT` (6) and `MEDIA_MAX_PER_CLIENT` (2); `MEDIA_DOWNLOADS=false` turns the route off. These two routes are not request-logged, so pasted links are not stored.
+- Not supported, on purpose: YouTube, Facebook, Instagram, TikTok, X, Vimeo, Netflix and similar platforms that do not allow downloading (list in `extension/src/core/restricted-sites.ts`), adult tube sites, encrypted or DRM streams, and live streams.
+- Downloads pass through the server, so they use its bandwidth. Set a lower `MEDIA_MAX_MB` or turn the route off on a small VPS.
+
+The backend now builds with esbuild (`npm run build` → `dist/server.js`), because it shares the HLS, DASH and MP4 code in `extension/src/core` with the extension.
+
 `npm run build` writes static files to `website/dist/` for any static host. Set `VITE_API_URL` (the backend, https in production) and optionally `VITE_REPO_URL` at build time; see `website/.env.example`. The backend only answers browsers from origins in `CORS_ORIGINS` (default `http://localhost:3180`, the local preview port), so add the website's address there in production.
 
 ## Project layout

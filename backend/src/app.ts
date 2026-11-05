@@ -5,6 +5,7 @@ import type { ProbeNetwork } from './config.js';
 import { nullRepository, type CheckRepository } from './database/repository.js';
 import { accessibilityRoutes } from './routes/accessibility.js';
 import { historyRoutes } from './routes/history.js';
+import { mediaRoutes, type MediaRouteOptions } from './routes/media.js';
 import { probeRoutes } from './routes/probe.js';
 import { statusRoutes } from './routes/status.js';
 import type { AccessibilityService } from './services/accessibility-service.js';
@@ -24,6 +25,7 @@ export interface AppOptions {
   ooni?: OoniDirectory;
   geoip?: GeoIp;
   corsOrigins?: string[];
+  media?: MediaRouteOptions;
   probeToken?: string;
   network: ProbeNetwork;
   ooniEnabled: boolean;
@@ -34,6 +36,13 @@ export interface AppOptions {
 }
 
 const NO_OONI: OoniDirectory = { forCountry: () => ({ summary: async () => null }) };
+
+function countryPeersOf(options: AppOptions): Record<string, PeerClient[]> {
+  if (!options.countryPeers) {
+    return {};
+  }
+  return options.countryPeers;
+}
 
 function peersOf(options: AppOptions): PeerClient[] {
   if (!options.peers) {
@@ -58,9 +67,8 @@ export async function buildApp(options: AppOptions) {
     allowList: (request) => sameToken(request.headers['x-probe-token'], probeToken),
   });
 
-  const corsOrigins = options.corsOrigins ?? [];
-  if (corsOrigins.length > 0) {
-    await app.register(cors, { origin: corsOrigins, methods: ['GET', 'POST'], maxAge: 600 });
+  if (options.corsOrigins && options.corsOrigins.length > 0) {
+    await app.register(cors, { origin: options.corsOrigins, methods: ['GET', 'POST'], maxAge: 600 });
   }
 
   app.addHook('onSend', async (_request, reply) => {
@@ -75,7 +83,7 @@ export async function buildApp(options: AppOptions) {
   const router = createCountryRouter({
     localCountry: options.network.country,
     local: combined,
-    countryPeers: options.countryPeers ?? {},
+    countryPeers: countryPeersOf(options),
     ooni: options.ooni ?? NO_OONI,
     onError: onPeerError,
   });
@@ -86,6 +94,9 @@ export async function buildApp(options: AppOptions) {
   });
   await app.register(accessibilityRoutes, { prefix: '/api/v1', router, resolveCountry });
   await app.register(historyRoutes, { prefix: '/api/v1', repository: options.repository ?? nullRepository, country: options.network.country });
+  if (options.media) {
+    await app.register(mediaRoutes, { prefix: '/api/v1', ...options.media });
+  }
   if (probeToken) {
     await app.register(probeRoutes, { prefix: '/api/v1', service: options.service, token: probeToken });
   }

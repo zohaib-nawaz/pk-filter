@@ -46,7 +46,10 @@ async function requestCheck(domain: string, country: string): Promise<SiteCheck>
   if (!response.ok) {
     throw new CheckError(failureText(response.status));
   }
-  const body = (await response.json()) as { results?: unknown[]; country?: unknown; countrySource?: unknown; measuredBy?: unknown };
+  const body = (await response.json()) as { results?: unknown[]; rejected?: unknown; country?: unknown; countrySource?: unknown; measuredBy?: unknown };
+  if (Array.isArray(body.rejected) && body.rejected.includes(domain)) {
+    throw new CheckError('That does not look like a public website.');
+  }
   const results = Array.isArray(body.results) ? body.results.filter(isResult) : [];
   const result = results.find((item) => item.domain === domain);
   return {

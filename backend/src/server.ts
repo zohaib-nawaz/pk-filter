@@ -7,6 +7,7 @@ import { createAccessibilityService } from './services/accessibility-service.js'
 import { openGeoIp } from './services/geoip.js';
 import { createOoniDirectory } from './services/ooni-service.js';
 import { createPakistanProbe } from './services/pakistan-probe.js';
+import { createDownloadSlots } from './services/media/slots.js';
 import { createPeerClient, type PeerClient } from './services/peer-client.js';
 
 const PRUNE_INTERVAL_MS = 6 * 3_600_000;
@@ -58,6 +59,14 @@ const app = await buildApp({
   geoip,
   probeToken: config.probeToken,
   corsOrigins: config.corsOrigins,
+  media: config.media.enabled
+    ? {
+        secret: config.media.secret,
+        maxBytes: config.media.maxBytes,
+        ticketTtlMs: config.media.ticketTtlMs,
+        slots: createDownloadSlots(config.media.maxConcurrent, config.media.maxPerClient),
+      }
+    : undefined,
   network: config.network,
   ooniEnabled: config.ooniEnabled,
   persistence: repository !== nullRepository,
@@ -66,6 +75,9 @@ const app = await buildApp({
   logger: { level: config.logLevel },
 });
 logCheckFailure = (error, domain) => app.log.warn({ err: error, domain }, 'check_failed');
+if (config.media.enabled && !config.media.secretConfigured) {
+  app.log.warn('MEDIA_SECRET is not set (32+ characters); download links stop working after every restart');
+}
 
 function prune() {
   repository

@@ -21,7 +21,11 @@ function renderState(state: SiteCheckState) {
     );
   }
   if (state.phase === 'error') {
-    return <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">{state.message}</p>;
+    return (
+      <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+        {state.message}
+      </p>
+    );
   }
   if (state.phase === 'done') {
     return <CheckResultCard view={state.view} />;
@@ -91,7 +95,7 @@ export function Checker({ state, countries, examples, onCheck }: CheckerProps) {
           </button>
         ))}
       </p>
-      {renderState(state)}
+      <div aria-live="polite">{renderState(state)}</div>
     </div>
   );
 }

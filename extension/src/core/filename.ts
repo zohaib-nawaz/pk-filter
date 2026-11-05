@@ -8,9 +8,8 @@ export function buildFilename(title: string, extension: string): string {
     .normalize('NFKC')
     .replace(ILLEGAL, ' ')
     .replace(/\s+/g, ' ')
-    .replace(/^[\s.]+|[\s.]+$/g, '')
-    .slice(0, MAX_BASE_LENGTH)
-    .trim();
+    .replace(/^[\s.]+|[\s.]+$/g, '');
+  base = Array.from(base).slice(0, MAX_BASE_LENGTH).join('').trim();
   base = base.replace(new RegExp(`\\.${safeExtension}$`, 'i'), '');
   if (!base || RESERVED.test(base)) {
     base = 'video';
