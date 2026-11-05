@@ -128,6 +128,20 @@ Popup → **Downloads** tab shows title, format, size, progress and status, with
 
 Performance: Google results render first; cached accessibility results are applied straight away (`lookup`), only new domains go to the backend in batches (`check`). Video checks run on demand, at most 3 at a time, and are cached for 10 minutes.
 
+## Website
+
+`website/` is the project's public site (Vite, React, Tailwind): landing page, a live "Is a site blocked where you are?" checker that calls the same API, install steps for Chrome, Edge and Firefox, a section for website owners, FAQ, and a privacy policy page (`privacy.html`, usable for store listings). It reuses the extension's country names, status colours, evidence labels and Cloudflare country fallback from `extension/src/core`.
+
+```bash
+cd website && npm install
+```
+
+```bash
+cd website && npm run build
+```
+
+`npm run build` writes static files to `website/dist/` for any static host. Set `VITE_API_URL` (the backend, https in production) and optionally `VITE_REPO_URL` at build time; see `website/.env.example`. The backend only answers browsers from origins in `CORS_ORIGINS` (default `http://localhost:3180`, the local preview port), so add the website's address there in production.
+
 ## Project layout
 
 ```

@@ -41,6 +41,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL ?? '',
   peerProbes: listFrom(process.env.PEER_PROBES).map(peerFrom),
   geoipDb: process.env.GEOIP_DB ?? '',
+  corsOrigins: listFrom(process.env.CORS_ORIGINS ?? 'http://localhost:3180'),
   probeToken: process.env.PROBE_TOKEN ?? '',
   maxDomainsPerRequest: 20,
 } as const;

@@ -29,9 +29,23 @@ const LABELS: Record<string, string> = {
 
 const SKIPPED = new Set(['control_dns_resolved', 'ooni_unavailable']);
 
+const STATUS_CODE = /^(https?)_status_(\d{3})$/;
+
+function describeOne(code: string): string {
+  const known = LABELS[code];
+  if (known) {
+    return known;
+  }
+  const status = STATUS_CODE.exec(code);
+  if (status) {
+    return `${(status[1] as string).toUpperCase()} answered with status ${status[2]}`;
+  }
+  return code.replace(/_/g, ' ');
+}
+
 export function describeEvidence(codes: string[], limit = 4): string[] {
   return codes
     .filter((code) => !SKIPPED.has(code))
-    .map((code) => LABELS[code] ?? code.replace(/_/g, ' '))
+    .map(describeOne)
     .slice(0, limit);
 }

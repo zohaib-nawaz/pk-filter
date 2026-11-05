@@ -1,4 +1,5 @@
 import Fastify, { type FastifyServerOptions } from 'fastify';
+import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import type { ProbeNetwork } from './config.js';
 import { nullRepository, type CheckRepository } from './database/repository.js';
@@ -22,6 +23,7 @@ export interface AppOptions {
   countryPeers?: Record<string, PeerClient[]>;
   ooni?: OoniDirectory;
   geoip?: GeoIp;
+  corsOrigins?: string[];
   probeToken?: string;
   network: ProbeNetwork;
   ooniEnabled: boolean;
@@ -55,6 +57,11 @@ export async function buildApp(options: AppOptions) {
     timeWindow: '1 minute',
     allowList: (request) => sameToken(request.headers['x-probe-token'], probeToken),
   });
+
+  const corsOrigins = options.corsOrigins ?? [];
+  if (corsOrigins.length > 0) {
+    await app.register(cors, { origin: corsOrigins, methods: ['GET', 'POST'], maxAge: 600 });
+  }
 
   app.addHook('onSend', async (_request, reply) => {
     reply.header('cache-control', 'no-store');

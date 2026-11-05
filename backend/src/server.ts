@@ -57,6 +57,7 @@ const app = await buildApp({
   ooni,
   geoip,
   probeToken: config.probeToken,
+  corsOrigins: config.corsOrigins,
   network: config.network,
   ooniEnabled: config.ooniEnabled,
   persistence: repository !== nullRepository,

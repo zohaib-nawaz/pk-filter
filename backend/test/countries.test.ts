@@ -114,3 +114,13 @@ describe('country routing', () => {
     expect(other).toMatchObject({ available: false });
   });
 });
+
+describe('website access', () => {
+  it('allows only the configured website origin', async () => {
+    const server = await buildApp({ service: local, network, ooniEnabled: true, persistence: false, rateLimitPerMinute: 100, corsOrigins: ['https://pkfilter.example'] });
+    const allowed = await server.inject({ method: 'OPTIONS', url: '/api/v1/check', headers: { origin: 'https://pkfilter.example', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' } });
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://pkfilter.example');
+    const other = await server.inject({ method: 'GET', url: '/api/v1/status', headers: { origin: 'https://evil.example' } });
+    expect(other.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
