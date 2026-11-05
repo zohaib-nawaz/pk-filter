@@ -10,6 +10,16 @@ export interface ProbeNetwork {
   city: string;
 }
 
+export interface NetworkResult {
+  isp: string;
+  asn: string;
+  city: string;
+  status: AccessStatus;
+  confidence: number;
+  lastChecked: string;
+  evidence: string[];
+}
+
 export interface CheckResult {
   domain: string;
   status: AccessStatus;
@@ -20,6 +30,7 @@ export interface CheckResult {
   method: string;
   network: ProbeNetwork;
   ttlSeconds: number;
+  networks?: NetworkResult[];
 }
 
 export interface Settings {
@@ -32,6 +43,7 @@ export interface Settings {
   videoOnPages: boolean;
   videoShowUnavailable: boolean;
   streamDomains: string[];
+  preferredIsp: string;
 }
 
 export interface SyncState {
@@ -39,11 +51,28 @@ export interface SyncState {
   lastError: string | null;
 }
 
+export interface ServiceNetwork extends ProbeNetwork {
+  online: boolean;
+}
+
 export interface ServiceStatus {
   online: boolean;
   country: string | null;
   network: ProbeNetwork | null;
+  networks: ServiceNetwork[];
   ooni: boolean;
+}
+
+export interface SiteHistory {
+  available: boolean;
+  days: Array<{ day: string; status: AccessStatus }>;
+  blockedSince: string | null;
+}
+
+export interface SiteStatus {
+  domain: string;
+  result: CheckResult | null;
+  history: SiteHistory | null;
 }
 
 export interface OverviewStats {

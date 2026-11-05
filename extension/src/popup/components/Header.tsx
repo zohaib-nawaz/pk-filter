@@ -16,7 +16,7 @@ export function Header({ enabled, onToggle }: HeaderProps) {
         </div>
       </div>
       <div className="rounded-lg bg-neutral-50 px-3 py-2.5 dark:bg-neutral-800">
-        <Switch checked={enabled} label="Enable on Google Search" onChange={onToggle} />
+        <Switch checked={enabled} label="Enable on search results" onChange={onToggle} />
       </div>
     </header>
   );

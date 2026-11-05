@@ -1,4 +1,5 @@
 import { expiresAt } from '../core/cache-policy';
+import { createLimiter } from '../core/limiter';
 import { sanitizeSettings } from '../core/settings';
 import type { CheckResult, Settings, SyncState } from '../core/types';
 
@@ -6,26 +7,37 @@ const SETTINGS_KEY = 'settings';
 const SYNC_KEY = 'sync';
 const REFRESH_KEY = 'refreshRequestedAt';
 const CACHE_PREFIX = 'cache:';
+const MAX_CACHE_ENTRIES = 5_000;
+const settingsQueue = createLimiter(1);
+const syncQueue = createLimiter(1);
 
 interface CacheEntry {
   result: CheckResult;
   expiresAt: number;
 }
 
+export type SettingsUpdate = Partial<Settings> | ((current: Settings) => Partial<Settings>);
+
 export async function loadSettings(): Promise<Settings> {
   const stored = await chrome.storage.sync.get(SETTINGS_KEY);
   return sanitizeSettings(stored[SETTINGS_KEY]);
 }
 
-export async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = sanitizeSettings({ ...(await loadSettings()), ...patch });
-  await chrome.storage.sync.set({ [SETTINGS_KEY]: next });
-  return next;
+export function saveSettings(update: SettingsUpdate): Promise<Settings> {
+  return settingsQueue(async () => {
+    const current = await loadSettings();
+    const patch = typeof update === 'function' ? update(current) : update;
+    const next = sanitizeSettings({ ...current, ...patch });
+    await chrome.storage.sync.set({ [SETTINGS_KEY]: next });
+    return next;
+  });
 }
 
 export function onSettingsChanged(listener: (settings: Settings) => void): () => void {
   const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'sync' && changes[SETTINGS_KEY]) listener(sanitizeSettings(changes[SETTINGS_KEY].newValue));
+    if (area === 'sync' && changes[SETTINGS_KEY]) {
+      listener(sanitizeSettings(changes[SETTINGS_KEY].newValue));
+    }
   };
   chrome.storage.onChanged.addListener(handler);
   return () => chrome.storage.onChanged.removeListener(handler);
@@ -33,7 +45,9 @@ export function onSettingsChanged(listener: (settings: Settings) => void): () =>
 
 export function onRefreshRequested(listener: () => void): () => void {
   const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'local' && changes[REFRESH_KEY]) listener();
+    if (area === 'local' && changes[REFRESH_KEY]) {
+      listener();
+    }
   };
   chrome.storage.onChanged.addListener(handler);
   return () => chrome.storage.onChanged.removeListener(handler);
@@ -44,19 +58,25 @@ export async function requestRefresh(): Promise<void> {
 }
 
 export async function readCache(domains: string[], now: number): Promise<Record<string, CheckResult>> {
-  if (domains.length === 0) return {};
-  const stored = await chrome.storage.local.get(domains.map((domain) => CACHE_PREFIX + domain));
   const results: Record<string, CheckResult> = {};
+  if (domains.length === 0) {
+    return results;
+  }
+  const stored = await chrome.storage.local.get(domains.map((domain) => CACHE_PREFIX + domain));
   for (const domain of domains) {
     const entry = stored[CACHE_PREFIX + domain] as CacheEntry | undefined;
-    if (entry && entry.expiresAt > now) results[domain] = entry.result;
+    if (entry && entry.expiresAt > now) {
+      results[domain] = entry.result;
+    }
   }
   return results;
 }
 
 export async function writeCache(results: CheckResult[], settings: Settings, now: number): Promise<void> {
   const entries: Record<string, CacheEntry> = {};
-  for (const result of results) entries[CACHE_PREFIX + result.domain] = { result, expiresAt: expiresAt(result, settings, now) };
+  for (const result of results) {
+    entries[CACHE_PREFIX + result.domain] = { result, expiresAt: expiresAt(result, settings, now) };
+  }
   await chrome.storage.local.set(entries);
 }
 
@@ -70,20 +90,31 @@ export async function countCache(now: number): Promise<number> {
 }
 
 export async function pruneCache(now: number): Promise<void> {
-  const expired = (await cacheEntries()).filter(([, entry]) => entry.expiresAt <= now).map(([key]) => key);
-  if (expired.length) await chrome.storage.local.remove(expired);
+  const entries = await cacheEntries();
+  const live = entries.filter(([, entry]) => entry.expiresAt > now).sort(([, a], [, b]) => b.expiresAt - a.expiresAt);
+  const expired = entries.filter(([, entry]) => entry.expiresAt <= now);
+  const overflow = live.slice(MAX_CACHE_ENTRIES);
+  const keys = [...expired, ...overflow].map(([key]) => key);
+  if (keys.length > 0) {
+    await chrome.storage.local.remove(keys);
+  }
 }
 
 export async function clearCache(): Promise<void> {
   const keys = (await cacheEntries()).map(([key]) => key);
-  if (keys.length) await chrome.storage.local.remove(keys);
+  if (keys.length > 0) {
+    await chrome.storage.local.remove(keys);
+  }
 }
 
 export async function readSync(): Promise<SyncState> {
   const stored = await chrome.storage.local.get(SYNC_KEY);
-  return { lastSync: null, lastError: null, ...(stored[SYNC_KEY] as Partial<SyncState> | undefined) };
+  const saved = stored[SYNC_KEY] as Partial<SyncState> | undefined;
+  return { lastSync: null, lastError: null, ...saved };
 }
 
-export async function writeSync(patch: Partial<SyncState>): Promise<void> {
-  await chrome.storage.local.set({ [SYNC_KEY]: { ...(await readSync()), ...patch } });
+export function writeSync(patch: Partial<SyncState>): Promise<void> {
+  return syncQueue(async () => {
+    await chrome.storage.local.set({ [SYNC_KEY]: { ...(await readSync()), ...patch } });
+  });
 }

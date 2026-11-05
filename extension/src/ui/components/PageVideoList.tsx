@@ -23,6 +23,13 @@ function fileName(url: string): string {
   }
 }
 
+function renderError(state: PageVideoState) {
+  if (state.status !== 'error') {
+    return null;
+  }
+  return <span className="block text-xs text-red-600 dark:text-red-400">{state.message}</span>;
+}
+
 export function PageVideoList({ videos, states, onDownload }: PageVideoListProps) {
   return (
     <section className="flex flex-col gap-2">
@@ -48,9 +55,7 @@ export function PageVideoList({ videos, states, onDownload }: PageVideoListProps
                 <span className="block text-xs text-neutral-500 dark:text-neutral-400">
                   {video.extension.toUpperCase()} · {formatBytes(video.sizeBytes)}
                 </span>
-                {state.status === 'error' && (
-                  <span className="block text-xs text-red-600 dark:text-red-400">{state.message}</span>
-                )}
+                {renderError(state)}
               </span>
               <button
                 type="button"

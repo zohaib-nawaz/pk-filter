@@ -35,8 +35,12 @@ const IPV6_RANGES: Array<[string, number]> = [
   ['ff00::', 8],
 ];
 
-for (const [network, prefix] of IPV4_RANGES) reserved.addSubnet(network, prefix, 'ipv4');
-for (const [network, prefix] of IPV6_RANGES) reserved.addSubnet(network, prefix, 'ipv6');
+for (const [network, prefix] of IPV4_RANGES) {
+  reserved.addSubnet(network, prefix, 'ipv4');
+}
+for (const [network, prefix] of IPV6_RANGES) {
+  reserved.addSubnet(network, prefix, 'ipv6');
+}
 
 const MAPPED_V4 = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i;
 
@@ -47,9 +51,15 @@ export function stripBrackets(host: string): string {
 export function isPublicIp(address: string): boolean {
   const ip = stripBrackets(address);
   const mapped = MAPPED_V4.exec(ip);
-  if (mapped?.[1]) return isPublicIp(mapped[1]);
+  if (mapped?.[1]) {
+    return isPublicIp(mapped[1]);
+  }
   const version = isIP(ip);
-  if (version === 4) return !reserved.check(ip, 'ipv4');
-  if (version === 6) return !ip.toLowerCase().startsWith('::ffff:') && !reserved.check(ip, 'ipv6');
+  if (version === 4) {
+    return !reserved.check(ip, 'ipv4');
+  }
+  if (version === 6) {
+    return !ip.toLowerCase().startsWith('::ffff:') && !reserved.check(ip, 'ipv6');
+  }
   return false;
 }

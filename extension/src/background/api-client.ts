@@ -1,4 +1,4 @@
-import type { AccessStatus, CheckResult, ServiceStatus } from '../core/types';
+import type { AccessStatus, CheckResult, ServiceStatus, SiteHistory } from '../core/types';
 
 const API_URL = __API_URL__.replace(/\/+$/, '');
 const STATUSES = new Set<AccessStatus>(['accessible', 'blocked', 'possibly_blocked', 'unknown', 'server_error']);
@@ -23,18 +23,40 @@ export async function postCheck(domains: string[]): Promise<CheckResult[]> {
     body: JSON.stringify({ domains, country: 'PK' }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(response.status === 429 ? 'Rate limited by the checking service' : `Service error ${response.status}`);
+  if (!response.ok) {
+    throw new Error(response.status === 429 ? 'Rate limited by the checking service' : `Service error ${response.status}`);
+  }
   const body = (await response.json()) as { results?: unknown[] };
-  return (body.results ?? []).filter(isCheckResult);
+  if (!Array.isArray(body.results)) {
+    return [];
+  }
+  return body.results.filter(isCheckResult);
 }
 
 export async function getServiceStatus(): Promise<ServiceStatus> {
   try {
     const response = await fetch(`${API_URL}/api/v1/status`, { signal: AbortSignal.timeout(8_000) });
-    if (!response.ok) throw new Error();
+    if (!response.ok) {
+      throw new Error();
+    }
     const body = (await response.json()) as Partial<ServiceStatus> & { country?: string };
-    return { online: true, country: body.country ?? null, network: body.network ?? null, ooni: body.ooni === true };
+    const network = body.network ?? null;
+    const networks = Array.isArray(body.networks) ? body.networks : network ? [{ ...network, online: true }] : [];
+    return { online: true, country: body.country ?? null, network, networks, ooni: body.ooni === true };
   } catch {
-    return { online: false, country: null, network: null, ooni: false };
+    return { online: false, country: null, network: null, networks: [], ooni: false };
+  }
+}
+
+export async function getHistory(domain: string): Promise<SiteHistory | null> {
+  try {
+    const response = await fetch(`${API_URL}/api/v1/history?domain=${encodeURIComponent(domain)}`, { signal: AbortSignal.timeout(8_000) });
+    if (!response.ok) {
+      return null;
+    }
+    const body = (await response.json()) as Partial<SiteHistory>;
+    return { available: body.available === true, days: Array.isArray(body.days) ? body.days : [], blockedSince: body.blockedSince ?? null };
+  } catch {
+    return null;
   }
 }

@@ -6,6 +6,7 @@ function installChrome(messages: Message[], extra: Record<string, unknown> = {})
   const settings = { videoDownloader: true, videoOnPages: true, ...extra };
   vi.stubGlobal('chrome', {
     runtime: {
+      id: 'test-extension',
       sendMessage: async (message: Message) => {
         messages.push(message);
         if (message.type !== 'inspect-media') return { ok: true };
@@ -37,7 +38,16 @@ function installChrome(messages: Message[], extra: Record<string, unknown> = {})
   );
 }
 
+function retire() {
+  const stub = globalThis as unknown as { chrome?: { runtime: { id?: string } } };
+  if (stub.chrome) {
+    stub.chrome.runtime.id = undefined;
+  }
+  document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+}
+
 afterEach(() => {
+  retire();
   vi.unstubAllGlobals();
   vi.resetModules();
 });
@@ -63,7 +73,7 @@ describe('video page detection', () => {
     ]);
     expect(document.querySelectorAll('pkaf-video')).toHaveLength(5);
 
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    retire();
   });
 
   it("uses the page's published file for streamed players and detects audio", async () => {
@@ -81,8 +91,9 @@ describe('video page detection', () => {
     expect(last?.videos?.map((video) => video.url).sort()).toEqual(['https://cdn.example.com/episode.mp3', 'https://cdn.example.com/full.mp4']);
 
     document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    expect(document.querySelectorAll('pkaf-video')).toHaveLength(2);
+    retire();
     expect(document.querySelectorAll('pkaf-video')).toHaveLength(0);
-    expect(messages.filter((m) => m.type === 'page-videos').at(-1)?.videos).toEqual([]);
   });
 
   it('puts one download icon on a video thumbnail, preferring the large file', async () => {
@@ -108,7 +119,7 @@ describe('video page detection', () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     expect(document.querySelectorAll('pkaf-video')).toHaveLength(1);
 
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    retire();
   });
 
   function installPerformance(names: string[]) {
@@ -129,7 +140,7 @@ describe('video page detection', () => {
     await vi.waitFor(() => expect(messages.some((m) => m.type === 'page-videos')).toBe(true), { timeout: 2000 });
     expect(messages.filter((m) => m.type === 'inspect-media').map((m) => m.url)).toEqual(['https://cdn.example.org/v/master.m3u8']);
     expect(messages.filter((m) => m.type === 'page-videos').at(-1)?.videos?.map((video) => video.url)).toEqual(['https://cdn.example.org/v/master.m3u8']);
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    retire();
     vi.restoreAllMocks();
   });
 
@@ -143,7 +154,7 @@ describe('video page detection', () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(messages.filter((m) => m.type === 'inspect-media')).toEqual([]);
     expect(messages.filter((m) => m.type === 'page-videos').flatMap((m) => m.videos ?? [])).toEqual([]);
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    retire();
     vi.restoreAllMocks();
   });
 
@@ -156,7 +167,7 @@ describe('video page detection', () => {
     await import('../src/content/video-page');
     await vi.waitFor(() => expect(messages.some((m) => m.type === 'page-videos')).toBe(true), { timeout: 2000 });
     expect(messages.filter((m) => m.type === 'inspect-media').map((m) => m.url)).toEqual(['https://cdn.example.org/v/manifest.mpd']);
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    retire();
     vi.restoreAllMocks();
   });
 
@@ -180,7 +191,7 @@ describe('video page detection', () => {
       ['example.org'],
     );
     await vi.waitFor(() => expect(inspected(messages)).toEqual(['https://cdn.example.org/v/master.m3u8?token=abc']), { timeout: 2000 });
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    retire();
     vi.restoreAllMocks();
   });
 
@@ -192,7 +203,7 @@ describe('video page detection', () => {
       ['example.org'],
     );
     await vi.waitFor(() => expect(inspected(messages)).toEqual(['https://cdn.example.org/v/stream.mpd?sig=1']), { timeout: 2000 });
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    retire();
     vi.restoreAllMocks();
   });
 
@@ -205,7 +216,7 @@ describe('video page detection', () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(inspected(messages)).toEqual([]);
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    retire();
     vi.restoreAllMocks();
   });
 
@@ -215,7 +226,7 @@ describe('video page detection', () => {
     expect(inspected(messages)).toEqual([]);
     document.querySelector('.player')?.setAttribute('data-download-url', 'https://cdn.example.org/v/late.mpd');
     await vi.waitFor(() => expect(inspected(messages)).toEqual(['https://cdn.example.org/v/late.mpd']), { timeout: 3000 });
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+    retire();
     vi.restoreAllMocks();
   });
 });

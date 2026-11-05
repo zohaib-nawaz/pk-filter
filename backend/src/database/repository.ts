@@ -1,5 +1,6 @@
 import pg from 'pg';
 import type { AccessStatus, Evidence } from '../services/classification-engine.js';
+import type { HistoryRow } from '../services/history.js';
 import type { ProbeMeasurement } from '../services/pakistan-probe.js';
 
 export interface CheckRecord {
@@ -15,20 +16,26 @@ export interface CheckRecord {
 
 export interface CheckRepository {
   saveCheck(record: CheckRecord): Promise<void>;
+  history(domain: string, days: number): Promise<HistoryRow[] | null>;
   prune(retentionDays: number): Promise<number>;
   close(): Promise<void>;
 }
 
 export const nullRepository: CheckRepository = {
   saveCheck: async () => undefined,
+  history: async () => null,
   prune: async () => 0,
   close: async () => undefined,
 };
 
 function tlsResult(measurement: ProbeMeasurement): Record<string, unknown> {
   const { https } = measurement;
-  if (https.error === 'tls') return { valid: false, errorCode: https.errorCode };
-  if (https.status !== null) return { valid: true };
+  if (https.error === 'tls') {
+    return { valid: false, errorCode: https.errorCode };
+  }
+  if (https.status !== null) {
+    return { valid: true };
+  }
   return { valid: null, reason: https.error };
 }
 
@@ -84,6 +91,19 @@ export function createPgRepository(pool: pg.Pool): CheckRepository {
       }
     },
 
+    async history(domain, days) {
+      const result = await pool.query<{ day: string; status: HistoryRow['status']; last_at: string }>(
+        `select to_char(date_trunc('day', c.checked_at), 'YYYY-MM-DD') as day, c.status,
+                to_char(max(c.checked_at), 'YYYY-MM-DD"T"HH24:MI:SS.MS') as last_at
+           from accessibility_checks c
+           join domains d on d.id = c.domain_id
+          where d.normalized_domain = $1 and c.checked_at > now() - make_interval(days => $2)
+          group by 1, 2`,
+        [domain, days],
+      );
+      return result.rows.map((row) => ({ day: row.day, status: row.status, lastAt: row.last_at }));
+    },
+
     async prune(retentionDays) {
       const result = await pool.query(
         `delete from accessibility_checks where checked_at < now() - make_interval(days => $1)`,
@@ -92,6 +112,14 @@ export function createPgRepository(pool: pg.Pool): CheckRepository {
       await pool.query(`delete from network_measurements where measured_at < now() - make_interval(days => $1)`, [
         retentionDays,
       ]);
+      await pool.query(
+        `delete from domains where id in (
+           select d.id from domains d
+            where not exists (select 1 from accessibility_checks c where c.domain_id = d.id)
+              and not exists (select 1 from network_measurements n where n.domain_id = d.id)
+            for update skip locked
+         )`,
+      );
       return result.rowCount ?? 0;
     },
 

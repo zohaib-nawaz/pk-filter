@@ -55,10 +55,18 @@ function readSignals(m: ProbeMeasurement, ooni: OoniSummary | null): Signals {
 
 function judgeReachable(attempt: HttpAttempt, s: Signals): Verdict {
   const status = attempt.status as number;
-  if (status >= 500) return { status: 'server_error', confidence: 0.85 };
-  if (status === 451) return { status: 'possibly_blocked', confidence: 0.6 };
-  if (attempt.scheme === 'http' && s.httpsReset) return { status: 'possibly_blocked', confidence: 0.55 };
-  if (s.ooniConfirmed) return { status: 'accessible', confidence: 0.7 };
+  if (status >= 500) {
+    return { status: 'server_error', confidence: 0.85 };
+  }
+  if (status === 451) {
+    return { status: 'possibly_blocked', confidence: 0.6 };
+  }
+  if (attempt.scheme === 'http' && s.httpsReset) {
+    return { status: 'possibly_blocked', confidence: 0.55 };
+  }
+  if (s.ooniConfirmed) {
+    return { status: 'accessible', confidence: 0.7 };
+  }
   return { status: 'accessible', confidence: status < 400 ? 0.9 : 0.75 };
 }
 
@@ -66,17 +74,31 @@ function judgeUnreachable(s: Signals): Verdict {
   const interference = s.dnsInterference || s.httpsReset;
   const ooniMostlyAnomalous = s.ooniRecentCount >= MIN_OONI_SAMPLE && s.ooniAnomalyRate >= 0.5;
   const ooniStronglyAnomalous = s.ooniRecentCount >= STRONG_OONI_SAMPLE && s.ooniAnomalyRate >= 0.7;
-  if (s.domainMissing) return { status: 'unknown', confidence: 0.6 };
-  if (s.ooniConfirmed) return { status: 'blocked', confidence: interference ? 0.9 : 0.8 };
-  if (interference && ooniStronglyAnomalous) return { status: 'blocked', confidence: 0.8 };
-  if (interference) return { status: 'possibly_blocked', confidence: 0.6 };
-  if (ooniMostlyAnomalous) return { status: 'possibly_blocked', confidence: 0.5 };
+  if (s.domainMissing) {
+    return { status: 'unknown', confidence: 0.6 };
+  }
+  if (s.ooniConfirmed) {
+    return { status: 'blocked', confidence: interference ? 0.9 : 0.8 };
+  }
+  if (interference && ooniStronglyAnomalous) {
+    return { status: 'blocked', confidence: 0.8 };
+  }
+  if (interference) {
+    return { status: 'possibly_blocked', confidence: 0.6 };
+  }
+  if (ooniMostlyAnomalous) {
+    return { status: 'possibly_blocked', confidence: 0.5 };
+  }
   return { status: 'unknown', confidence: 0.3 };
 }
 
 function decide(s: Signals): Verdict {
-  if (s.blockpage) return { status: 'blocked', confidence: s.ooniConfirmed ? 0.98 : 0.95 };
-  if (s.reached) return judgeReachable(s.reached, s);
+  if (s.blockpage) {
+    return { status: 'blocked', confidence: s.ooniConfirmed ? 0.98 : 0.95 };
+  }
+  if (s.reached) {
+    return judgeReachable(s.reached, s);
+  }
   return judgeUnreachable(s);
 }
 
@@ -86,7 +108,9 @@ function dnsEvidence(m: ProbeMeasurement): Evidence[] {
   const list: Evidence[] = [
     { type: dns.error ? `dns_${dns.error}` : 'dns_resolved', source: 'probe', data: { ...data, error: dns.error } },
   ];
-  if (dns.bogon) list.push({ type: 'dns_private_answer', source: 'probe', data });
+  if (dns.bogon) {
+    list.push({ type: 'dns_private_answer', source: 'probe', data });
+  }
   if (dns.control) {
     list.push({
       type: dns.control.nxdomain ? 'control_dns_nxdomain' : 'control_dns_resolved',
@@ -94,14 +118,20 @@ function dnsEvidence(m: ProbeMeasurement): Evidence[] {
       data: { ...dns.control },
     });
   }
-  if (dns.manipulated) list.push({ type: 'dns_control_mismatch', source: 'probe', data: { control: dns.control } });
+  if (dns.manipulated) {
+    list.push({ type: 'dns_control_mismatch', source: 'probe', data: { control: dns.control } });
+  }
   return list;
 }
 
 function httpEvidence(attempt: HttpAttempt): Evidence[] {
   const data = { ...attempt };
-  if (attempt.blockpage) return [{ type: 'blockpage_detected', source: 'probe', data }];
-  if (attempt.error) return [{ type: `${attempt.scheme}_${attempt.error}`, source: 'probe', data }];
+  if (attempt.blockpage) {
+    return [{ type: 'blockpage_detected', source: 'probe', data }];
+  }
+  if (attempt.error) {
+    return [{ type: `${attempt.scheme}_${attempt.error}`, source: 'probe', data }];
+  }
   return [
     { type: `${attempt.scheme}_connection_success`, source: 'probe', data },
     { type: `${attempt.scheme}_status_${attempt.status}`, source: 'probe', data },
@@ -109,11 +139,19 @@ function httpEvidence(attempt: HttpAttempt): Evidence[] {
 }
 
 function ooniEvidence(ooni: OoniSummary | null): Evidence[] {
-  if (!ooni) return [{ type: 'ooni_unavailable', source: 'ooni', data: {} }];
+  if (!ooni) {
+    return [{ type: 'ooni_unavailable', source: 'ooni', data: {} }];
+  }
   const data = { ...ooni };
-  if (ooni.recent.measurements === 0) return [{ type: 'ooni_no_recent_data', source: 'ooni', data }];
-  if (ooni.recent.confirmed > 0) return [{ type: 'ooni_recent_confirmed', source: 'ooni', data }];
-  if (ooni.recent.anomalies > 0) return [{ type: 'ooni_recent_anomalies', source: 'ooni', data }];
+  if (ooni.recent.measurements === 0) {
+    return [{ type: 'ooni_no_recent_data', source: 'ooni', data }];
+  }
+  if (ooni.recent.confirmed > 0) {
+    return [{ type: 'ooni_recent_confirmed', source: 'ooni', data }];
+  }
+  if (ooni.recent.anomalies > 0) {
+    return [{ type: 'ooni_recent_anomalies', source: 'ooni', data }];
+  }
   return [{ type: 'ooni_recent_ok', source: 'ooni', data }];
 }
 

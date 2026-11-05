@@ -15,8 +15,12 @@ function readBoxes(data: Uint8Array, start = 0, end = data.length): Box[] {
     if (size === 1 && offset + 16 <= end) {
       size = Number(view.getBigUint64(offset + 8));
       header = 16;
-    } else if (size === 0) size = end - offset;
-    if (size < header || offset + size > end) break;
+    } else if (size === 0) {
+      size = end - offset;
+    }
+    if (size < header || offset + size > end) {
+      break;
+    }
     boxes.push({ type: String.fromCharCode(...data.subarray(offset + 4, offset + 8)), start: offset, size, header });
     offset += size;
   }
@@ -61,7 +65,9 @@ function trackIdOffset(data: Uint8Array, tkhd: Box): number {
 }
 
 function expectBox<T>(value: T | undefined, what: string): T {
-  if (value === undefined) throw new Error(`Missing ${what} box`);
+  if (value === undefined) {
+    throw new Error(`Missing ${what} box`);
+  }
   return value;
 }
 
@@ -89,7 +95,9 @@ export function mergeInitSegments(video: Uint8Array, audio: Uint8Array): MergedI
   const audioChildren = childrenOf(audio, audioMoov);
 
   const videoTraks = videoChildren.filter((box) => box.type === 'trak');
-  if (videoTraks.length === 0) throw new Error('Missing video trak box');
+  if (videoTraks.length === 0) {
+    throw new Error('Missing video trak box');
+  }
   const audioTrackId = Math.max(...videoTraks.map((trak) => trackId(video, trak))) + 1;
 
   const audioTrak = expectBox(find(audioChildren, 'trak'), 'audio trak');
@@ -114,11 +122,17 @@ export function retagFragment(fragment: Uint8Array, trackIdValue: number): Uint8
   const copy = concat([fragment]);
   const view = new DataView(copy.buffer);
   for (const top of readBoxes(copy)) {
-    if (top.type === 'sidx') view.setUint32(top.start + top.header + 4, trackIdValue);
-    if (top.type !== 'moof') continue;
+    if (top.type === 'sidx') {
+      view.setUint32(top.start + top.header + 4, trackIdValue);
+    }
+    if (top.type !== 'moof') {
+      continue;
+    }
     for (const traf of childrenOf(copy, top).filter((box) => box.type === 'traf')) {
       const tfhd = find(childrenOf(copy, traf), 'tfhd');
-      if (tfhd) view.setUint32(tfhd.start + tfhd.header + 4, trackIdValue);
+      if (tfhd) {
+        view.setUint32(tfhd.start + tfhd.header + 4, trackIdValue);
+      }
     }
   }
   return copy;
@@ -127,15 +141,21 @@ export function retagFragment(fragment: Uint8Array, trackIdValue: number): Uint8
 export function interleave<T>(first: T[], second: T[]): T[] {
   const out: T[] = [];
   for (let index = 0; index < Math.max(first.length, second.length); index += 1) {
-    if (index < first.length) out.push(first[index] as T);
-    if (index < second.length) out.push(second[index] as T);
+    if (index < first.length) {
+      out.push(first[index] as T);
+    }
+    if (index < second.length) {
+      out.push(second[index] as T);
+    }
   }
   return out;
 }
 
 export function parseSidx(bytes: Uint8Array, offsetInFile: number): Array<{ start: number; end: number }> | null {
   const sidx = find(readBoxes(bytes), 'sidx');
-  if (!sidx) return null;
+  if (!sidx) {
+    return null;
+  }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const content = sidx.start + sidx.header;
   const version = bytes[content];
@@ -148,7 +168,9 @@ export function parseSidx(bytes: Uint8Array, offsetInFile: number): Array<{ star
   const ranges: Array<{ start: number; end: number }> = [];
   for (let index = 0; index < count; index += 1) {
     const reference = view.getUint32(at);
-    if (reference >>> 31 === 1) return null;
+    if (reference >>> 31 === 1) {
+      return null;
+    }
     const size = reference & 0x7fffffff;
     ranges.push({ start, end: start + size - 1 });
     start += size;

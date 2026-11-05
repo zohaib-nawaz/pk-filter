@@ -30,7 +30,9 @@ export function useDownloads() {
 
   const hasRunning = items.some((item) => item.kind === 'file' && item.state === 'in_progress');
   useEffect(() => {
-    if (!hasRunning) return;
+    if (!hasRunning) {
+      return;
+    }
     const timer = window.setInterval(() => void refresh(), PROGRESS_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [hasRunning, refresh]);

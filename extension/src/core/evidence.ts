@@ -16,7 +16,11 @@ const LABELS: Record<string, string> = {
   ooni_recent_ok: 'OONI: recent measurements OK',
   ooni_no_recent_data: 'OONI: no recent data',
   service_unavailable: 'Checking service unreachable',
+  blocked_on_some_networks: 'Blocked on some ISPs, open on others',
+  suspicious_on_some_networks: 'Suspicious on some ISPs',
   probe_error: 'Measurement failed',
+  still_checking: 'Still being measured, check again shortly',
+  server_busy: 'Checking service is busy, check again shortly',
 };
 
 const SKIPPED = new Set(['control_dns_resolved', 'ooni_unavailable']);

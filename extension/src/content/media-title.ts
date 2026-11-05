@@ -15,12 +15,18 @@ function ownLabel(element: Element, site: string): string {
 function cardHeading(element: Element, isOtherMedia: (candidate: Element) => boolean, site: string): string {
   let node = element.parentElement;
   for (let level = 0; node && node !== document.body && level < MAX_LEVELS; level += 1) {
-    if ([...node.querySelectorAll('video, img')].some((child) => !element.contains(child) && isOtherMedia(child))) break;
+    if ([...node.querySelectorAll('video, img')].some((child) => !element.contains(child) && isOtherMedia(child))) {
+      break;
+    }
     for (const selector of TITLE_SELECTORS) {
       for (const heading of node.querySelectorAll(selector)) {
-        if (heading.contains(element)) continue;
+        if (heading.contains(element)) {
+          continue;
+        }
         const text = cleanTitle(heading.textContent, site);
-        if (text) return text;
+        if (text) {
+          return text;
+        }
       }
     }
     node = node.parentElement;

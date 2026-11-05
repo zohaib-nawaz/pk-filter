@@ -31,8 +31,11 @@ export const accessibilityRoutes: FastifyPluginAsync<{ service: AccessibilitySer
     const rejected: string[] = [];
     for (const input of request.body.domains) {
       const domain = normalizeDomain(input);
-      if (domain) accepted.add(domain);
-      else rejected.push(input);
+      if (domain) {
+        accepted.add(domain);
+      } else {
+        rejected.push(input);
+      }
     }
     const results = await service.check([...accepted]);
     return { results, rejected };

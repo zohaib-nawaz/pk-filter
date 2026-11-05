@@ -1,19 +1,25 @@
 import { toDownloadView, toStreamView } from '../core/downloads';
 import type { StreamJob } from '../core/stream-jobs';
 import type { DownloadView } from '../core/types';
-import { readDownloadRecords, removeDownloadRecord } from './download-store';
+import { readDownloadRecords } from './download-store';
 import { sendRequest } from './messaging';
 
 const STREAM_JOBS_KEY = 'stream-jobs';
 
 async function readStreamJobs(): Promise<StreamJob[]> {
   const stored = await chrome.storage.local.get(STREAM_JOBS_KEY);
-  return (stored[STREAM_JOBS_KEY] as StreamJob[] | undefined) ?? [];
+  const jobs = stored[STREAM_JOBS_KEY];
+  if (!Array.isArray(jobs)) {
+    return [];
+  }
+  return jobs as StreamJob[];
 }
 
 async function fileViews(): Promise<DownloadView[]> {
   const records = await readDownloadRecords();
-  if (!chrome.downloads) return records.map((record) => toDownloadView(record, undefined));
+  if (!chrome.downloads) {
+    return records.map((record) => toDownloadView(record, undefined));
+  }
   const items = await Promise.all(records.map((record) => chrome.downloads.search({ id: record.id })));
   return records.map((record, index) => toDownloadView(record, items[index]?.[0]));
 }
@@ -25,7 +31,9 @@ export async function listDownloads(): Promise<DownloadView[]> {
 
 export function onStreamJobsChanged(listener: () => void): () => void {
   const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'local' && changes[STREAM_JOBS_KEY]) listener();
+    if (area === 'local' && changes[STREAM_JOBS_KEY]) {
+      listener();
+    }
   };
   chrome.storage.onChanged.addListener(handler);
   return () => chrome.storage.onChanged.removeListener(handler);
@@ -37,21 +45,65 @@ export function isDownloaderAvailable(): boolean {
 
 async function streamControl(view: DownloadView, action: 'pause' | 'resume' | 'cancel' | 'retry' | 'remove'): Promise<string | null> {
   const result = await sendRequest({ type: 'stream-control', id: view.streamId as string, action });
-  return result?.ok ? null : 'Could not update this stream download';
+  if (result && result.ok) {
+    return null;
+  }
+  return 'Could not update this stream download';
 }
 
-export const downloadActions = {
-  pause: async (view: DownloadView) => (view.kind === 'stream' ? streamControl(view, 'pause') : (await chrome.downloads.pause(view.record.id), null)),
-  resume: async (view: DownloadView) => (view.kind === 'stream' ? streamControl(view, 'resume') : (await chrome.downloads.resume(view.record.id), null)),
-  cancel: async (view: DownloadView) => (view.kind === 'stream' ? streamControl(view, 'cancel') : (await chrome.downloads.cancel(view.record.id), null)),
-  remove: async (view: DownloadView) => (view.kind === 'stream' ? streamControl(view, 'remove') : (await removeDownloadRecord(view.record.id), null)),
-  open: async (view: DownloadView) => (chrome.downloads.open(view.record.id), null),
-  show: async (view: DownloadView) => (chrome.downloads.show(view.record.id), null),
-  retry: async (view: DownloadView) => {
-    if (view.kind === 'stream') return streamControl(view, 'retry');
-    const result = await sendRequest({ type: 'download', url: view.record.url, title: view.record.title });
-    if (!result?.ok) return result?.error ?? 'Could not start the download';
-    await removeDownloadRecord(view.record.id);
+async function removeRecord(id: number): Promise<string | null> {
+  const result = await sendRequest({ type: 'remove-download', id });
+  if (result && result.ok) {
     return null;
+  }
+  return 'Could not remove this download';
+}
+
+async function retryFile(view: DownloadView): Promise<string | null> {
+  const result = await sendRequest({ type: 'download', url: view.record.url, title: view.record.title });
+  if (!result) {
+    return 'Could not start the download';
+  }
+  if (!result.ok) {
+    return result.error;
+  }
+  return removeRecord(view.record.id);
+}
+
+function fileOrStream(stream: StreamAction, file: (view: DownloadView) => Promise<unknown>) {
+  return async (view: DownloadView): Promise<string | null> => {
+    if (view.kind === 'stream') {
+      return streamControl(view, stream);
+    }
+    await file(view);
+    return null;
+  };
+}
+
+type StreamAction = 'pause' | 'resume' | 'cancel' | 'retry' | 'remove';
+
+export const downloadActions = {
+  pause: fileOrStream('pause', (view) => chrome.downloads.pause(view.record.id)),
+  resume: fileOrStream('resume', (view) => chrome.downloads.resume(view.record.id)),
+  cancel: fileOrStream('cancel', (view) => chrome.downloads.cancel(view.record.id)),
+  remove: async (view: DownloadView) => {
+    if (view.kind === 'stream') {
+      return streamControl(view, 'remove');
+    }
+    return removeRecord(view.record.id);
+  },
+  open: async (view: DownloadView) => {
+    chrome.downloads.open(view.record.id);
+    return null;
+  },
+  show: async (view: DownloadView) => {
+    chrome.downloads.show(view.record.id);
+    return null;
+  },
+  retry: async (view: DownloadView) => {
+    if (view.kind === 'stream') {
+      return streamControl(view, 'retry');
+    }
+    return retryFile(view);
   },
 };

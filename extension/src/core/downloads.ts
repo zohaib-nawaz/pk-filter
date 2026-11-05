@@ -84,9 +84,15 @@ export function toStreamView(job: StreamJob): DownloadView {
 }
 
 export function progressPercent(view: DownloadView): number | null {
-  if (view.state === 'complete') return 100;
-  if (view.percent !== null) return view.percent;
-  if (!view.totalBytes) return null;
+  if (view.state === 'complete') {
+    return 100;
+  }
+  if (view.percent !== null) {
+    return view.percent;
+  }
+  if (!view.totalBytes) {
+    return null;
+  }
   return Math.min(100, Math.floor((view.bytesReceived / view.totalBytes) * 100));
 }
 

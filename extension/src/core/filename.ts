@@ -12,7 +12,9 @@ export function buildFilename(title: string, extension: string): string {
     .slice(0, MAX_BASE_LENGTH)
     .trim();
   base = base.replace(new RegExp(`\\.${safeExtension}$`, 'i'), '');
-  if (!base || RESERVED.test(base)) base = 'video';
+  if (!base || RESERVED.test(base)) {
+    base = 'video';
+  }
   return `${base}.${safeExtension}`;
 }
 
@@ -37,13 +39,19 @@ export function cleanTitle(raw: string | null | undefined, siteName: string | nu
   if (siteName) {
     const site = escapeRegExp(siteName.trim());
     title = title
-      .replace(new RegExp(`\\s*(?:[|\\-–—·•:]|\\bon\\b|\\bat\\b)\\s*${site}\\s*$`, 'i'), '')
-      .replace(new RegExp(`^\\s*${site}\\s*[|\\-–—·•:]\\s*`, 'i'), '')
+      .replace(new RegExp(`\\s*(?:[|\\-\u2013\u2014·•:]|\\bon\\b|\\bat\\b)\\s*${site}\\s*$`, 'i'), '')
+      .replace(new RegExp(`^\\s*${site}\\s*[|\\-\u2013\u2014·•:]\\s*`, 'i'), '')
       .trim();
   }
-  if (GENERIC_LABELS.test(title) || title.length < 2) return '';
-  if (siteName && title.toLowerCase() === siteName.trim().toLowerCase()) return '';
-  if (title.length <= MAX_TITLE_LENGTH) return title;
+  if (GENERIC_LABELS.test(title) || title.length < 2) {
+    return '';
+  }
+  if (siteName && title.toLowerCase() === siteName.trim().toLowerCase()) {
+    return '';
+  }
+  if (title.length <= MAX_TITLE_LENGTH) {
+    return title;
+  }
   const cut = title.slice(0, MAX_TITLE_LENGTH);
   const space = cut.lastIndexOf(' ');
   return (space > 40 ? cut.slice(0, space) : cut).trim();

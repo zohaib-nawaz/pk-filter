@@ -16,7 +16,7 @@ export interface HiddenNotice {
   remove(): void;
 }
 
-export function createHiddenNotice(onShowAll: () => void): HiddenNotice {
+export function createHiddenNotice(onShowAll: () => void, anchorOf: () => Element | null): HiddenNotice {
   const host = document.createElement(NOTICE_TAG);
   const shadow = host.attachShadow({ mode: 'closed' });
   const style = document.createElement('style');
@@ -38,8 +38,10 @@ export function createHiddenNotice(onShowAll: () => void): HiddenNotice {
         return;
       }
       text.textContent = `${hiddenCount} result${hiddenCount === 1 ? '' : 's'} hidden by the Pakistan accessibility filter.`;
-      const anchor = document.getElementById('rso');
-      if (!host.isConnected && anchor?.parentElement) anchor.parentElement.insertBefore(host, anchor);
+      const anchor = anchorOf();
+      if (!host.isConnected && anchor?.parentElement) {
+        anchor.parentElement.insertBefore(host, anchor);
+      }
     },
     remove: () => host.remove(),
   };

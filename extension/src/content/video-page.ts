@@ -10,14 +10,34 @@ import { declaredForElement, declaredOnPage, DOWNLOAD_ATTRIBUTE } from './site-d
 import { prepareDownload } from './video-actions';
 import { createVideoButton, VIDEO_BUTTON_TAG, type VideoButton } from './video-button';
 
+interface IconPlacement {
+  width: number;
+  height: number;
+  offset: number;
+}
+
 interface TrackedVideo {
   button: VideoButton;
   source: string | null;
+  loadedAt: number;
+  placement: IconPlacement | null;
   visible: boolean;
   listeners: AbortController;
   media: PageVideo | null;
   fallback: string | null;
   thumbnail: string | null;
+}
+
+interface Manifest {
+  url: string;
+  key: string;
+  at: number;
+}
+
+interface Placement {
+  tracked: TrackedVideo;
+  left: number;
+  top: number;
 }
 
 interface TrackedInline {
@@ -27,6 +47,9 @@ interface TrackedInline {
 
 const TAKEOVER_EVENT = 'pkaf-video-takeover';
 const MAX_OVERLAYS = 40;
+const MAX_THUMBNAILS = 24;
+const MAX_MANIFESTS = 50;
+const MANIFEST_LEAD_MS = 2_000;
 const MAX_INLINE = 30;
 const MIN_WIDTH = 160;
 const MIN_HEIGHT = 90;
@@ -36,6 +59,7 @@ const PLACEMENT_STEP = 24;
 const PLACEMENT_TRIES = 8;
 const CHILDLESS_TAGS = new Set(['VIDEO', 'AUDIO', 'IMG', 'PICTURE', 'CANVAS', 'IFRAME', 'SVG', 'INPUT', 'SOURCE']);
 const SCAN_DEBOUNCE_MS = 800;
+const SCAN_MAX_WAIT_MS = 3_000;
 const REPORT_DEBOUNCE_MS = 300;
 const LINK_SELECTOR = MEDIA_LINK_EXTENSIONS.flatMap((ext) => [`a[href$=".${ext}" i]`, `a[href*=".${ext}?" i]`]).join(',');
 const THUMBNAIL_XPATH = `//*[@*[${MEDIA_LINK_EXTENSIONS.map((ext) => `contains(., '.${ext}')`).join(' or ')}]]`;
@@ -47,6 +71,7 @@ const usedFallbacks = new Set<string>();
 let observer: MutationObserver | null = null;
 let intersection: IntersectionObserver | null = null;
 let scanTimer: number | undefined;
+let scanPendingSince = 0;
 let declarationsChanged = false;
 let reportTimer: number | undefined;
 let lastReport = '';
@@ -55,7 +80,7 @@ let active = false;
 let showUnavailable = false;
 let streamsAllowed = false;
 let manifestObserver: PerformanceObserver | null = null;
-const manifests: string[] = [];
+const manifests: Manifest[] = [];
 let retired = false;
 
 function isWanted(settings: Settings): boolean {
@@ -79,14 +104,30 @@ function isManifest(name: string): boolean {
   return extension === 'm3u8' || extension === 'mpd';
 }
 
-function rememberManifests(names: string[]): boolean {
+function extensionAlive(): boolean {
+  return Boolean(chrome.runtime && chrome.runtime.id);
+}
+
+function manifestKey(name: string): string {
+  const url = new URL(name);
+  return `${url.origin}${url.pathname}`;
+}
+
+function rememberManifests(entries: PerformanceEntry[]): boolean {
   let added = false;
-  for (const name of names) {
-    if (!isManifest(name) || manifests.includes(name)) {
+  for (const entry of entries) {
+    if (!isManifest(entry.name)) {
       continue;
     }
-    manifests.push(name);
+    const key = manifestKey(entry.name);
+    if (manifests.some((item) => item.key === key)) {
+      continue;
+    }
+    manifests.push({ url: entry.name, key, at: entry.startTime });
     added = true;
+  }
+  if (manifests.length > MAX_MANIFESTS) {
+    manifests.splice(0, manifests.length - MAX_MANIFESTS);
   }
   return added;
 }
@@ -96,7 +137,6 @@ function reevaluateStreamed(): void {
     if (tracked.thumbnail || !(element instanceof HTMLVideoElement)) {
       continue;
     }
-    tracked.source = null;
     evaluate(element, tracked);
   }
 }
@@ -105,9 +145,9 @@ function watchManifests(): void {
   if (manifestObserver || !streamsAllowed || typeof PerformanceObserver === 'undefined') {
     return;
   }
-  rememberManifests(performance.getEntriesByType('resource').map((entry) => entry.name));
+  rememberManifests(performance.getEntriesByType('resource'));
   manifestObserver = new PerformanceObserver((list) => {
-    if (rememberManifests(list.getEntries().map((entry) => entry.name))) {
+    if (rememberManifests(list.getEntries())) {
       reevaluateStreamed();
     }
   });
@@ -115,16 +155,37 @@ function watchManifests(): void {
 }
 
 function stopManifests(): void {
-  manifestObserver?.disconnect();
+  if (manifestObserver) {
+    manifestObserver.disconnect();
+  }
   manifestObserver = null;
 }
 
-function streamFor(sources: string[]): string | null {
+function manifestSince(loadedAt: number): string | null {
+  const recent = manifests.find((item) => item.at >= loadedAt - MANIFEST_LEAD_MS);
+  if (recent) {
+    return recent.url;
+  }
+  const [first] = manifests;
+  if (!first) {
+    return null;
+  }
+  return first.url;
+}
+
+function streamFor(sources: string[], loadedAt: number): string | null {
   if (!streamsAllowed) {
     return null;
   }
   const own = sources.find((source) => isManifest(source));
-  return own ?? declaredOnPage()[0] ?? manifests[0] ?? null;
+  if (own) {
+    return own;
+  }
+  const [declared] = declaredOnPage();
+  if (declared) {
+    return declared;
+  }
+  return manifestSince(loadedAt);
 }
 
 function pickFallback(tracked: TrackedVideo): string | null {
@@ -218,7 +279,10 @@ function inspectThumbnail(element: Element, tracked: TrackedVideo): void {
 function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
   const sources = mediaSources(video);
   const declared = streamsAllowed ? declaredForElement(video) : null;
-  const signature = (declared ? [declared, ...sources] : sources).join('|') || null;
+  const streamed = sources.map((source) => sourceKind(source, location.href)).find((kind) => kind === 'blob' || kind === 'streaming');
+  const direct = declared ?? playableCandidate(sources);
+  const stream = !direct && streamed ? streamFor(sources, tracked.loadedAt) : null;
+  const signature = [declared, stream, ...sources].filter(Boolean).join('|') || null;
   if (signature === tracked.source) {
     return;
   }
@@ -229,9 +293,6 @@ function evaluate(video: HTMLVideoElement, tracked: TrackedVideo): void {
     tracked.button.set('unavailable', 'This video is DRM-protected and cannot be downloaded');
     return;
   }
-  const streamed = sources.map((source) => sourceKind(source, location.href)).find((kind) => kind === 'blob' || kind === 'streaming');
-  const direct = declared ?? playableCandidate(sources);
-  const stream = !direct && streamed ? streamFor(sources) : null;
   if (!direct && !stream && streamed) {
     tracked.fallback = pickFallback(tracked);
   }
@@ -285,32 +346,63 @@ function mount(element: Element, button: VideoButton): void {
   }
 }
 
-function placeAt(button: VideoButton, left: number, top: number): void {
-  const host = button.element;
-  host.style.left = '0px';
-  host.style.top = '0px';
-  const origin = host.getBoundingClientRect();
-  host.style.left = `${Math.round(left - origin.left)}px`;
-  host.style.top = `${Math.round(top - origin.top)}px`;
+function cachedIconTop(element: Element, tracked: TrackedVideo, rect: DOMRect): number {
+  const placement = tracked.placement;
+  if (placement && placement.width === rect.width && placement.height === rect.height) {
+    return rect.top + placement.offset;
+  }
+  const top = iconTop(element, rect);
+  tracked.placement = { width: rect.width, height: rect.height, offset: top - rect.top };
+  return top;
+}
+
+function styleOffset(value: string): number {
+  const parsed = Number.parseFloat(value);
+  if (Number.isFinite(parsed)) {
+    return parsed;
+  }
+  return 0;
+}
+
+function measure(video: Element, tracked: TrackedVideo): Placement | null {
+  const rect = video.getBoundingClientRect();
+  if (rect.width < MIN_WIDTH || rect.height < MIN_HEIGHT) {
+    return null;
+  }
+  const host = tracked.button.element;
+  const current = host.getBoundingClientRect();
+  const originLeft = current.left - styleOffset(host.style.left);
+  const originTop = current.top - styleOffset(host.style.top);
+  const left = rect.right - ICON_INSET - ICON_SIZE - originLeft;
+  const top = cachedIconTop(video, tracked, rect) - originTop;
+  return { tracked, left, top };
+}
+
+function wantsIcon(tracked: TrackedVideo): boolean {
+  return tracked.visible && !document.fullscreenElement && isVideoButtonShown(tracked.button.state(), showUnavailable);
 }
 
 function position(): void {
   frame = 0;
+  const shown: Array<[Element, TrackedVideo]> = [];
   for (const [video, tracked] of videos) {
-    const rect = video.getBoundingClientRect();
-    const show =
-      tracked.visible &&
-      rect.width >= MIN_WIDTH &&
-      rect.height >= MIN_HEIGHT &&
-      !document.fullscreenElement &&
-      isVideoButtonShown(tracked.button.state(), showUnavailable);
+    const show = wantsIcon(tracked);
     tracked.button.element.toggleAttribute('data-visible', show);
-    if (!show) {
-      continue;
+    if (show) {
+      mount(video, tracked.button);
+      shown.push([video, tracked]);
     }
-    mount(video, tracked.button);
-    placeAt(tracked.button, rect.right - ICON_INSET - ICON_SIZE, iconTop(video, rect));
   }
+  const placements = shown.map(([video, tracked]) => measure(video, tracked));
+  placements.forEach((placement, index) => {
+    const [, tracked] = shown[index] as [Element, TrackedVideo];
+    if (!placement) {
+      tracked.button.element.toggleAttribute('data-visible', false);
+      return;
+    }
+    tracked.button.element.style.left = `${Math.round(placement.left)}px`;
+    tracked.button.element.style.top = `${Math.round(placement.top)}px`;
+  });
 }
 
 function schedulePosition(): void {
@@ -324,6 +416,8 @@ function trackVideo(video: HTMLVideoElement): void {
   const tracked: TrackedVideo = {
     button,
     source: null,
+    loadedAt: 0,
+    placement: null,
     visible: false,
     listeners: new AbortController(),
     media: null,
@@ -332,7 +426,21 @@ function trackVideo(video: HTMLVideoElement): void {
   };
   videos.set(video, tracked);
   mount(video, button);
+  video.addEventListener(
+    'loadstart',
+    () => {
+      tracked.loadedAt = performance.now();
+    },
+    { signal: tracked.listeners.signal },
+  );
   video.addEventListener('loadedmetadata', () => evaluate(video, tracked), { signal: tracked.listeners.signal });
+  video.addEventListener(
+    'resize',
+    () => {
+      tracked.placement = null;
+    },
+    { signal: tracked.listeners.signal },
+  );
   intersection?.observe(video);
   evaluate(video, tracked);
 }
@@ -342,6 +450,8 @@ function trackThumbnail(element: Element, url: string): void {
   const tracked: TrackedVideo = {
     button,
     source: null,
+    loadedAt: 0,
+    placement: null,
     visible: false,
     listeners: new AbortController(),
     media: null,
@@ -353,9 +463,20 @@ function trackThumbnail(element: Element, url: string): void {
   intersection?.observe(element);
 }
 
+function countTracked(thumbnails: boolean): number {
+  let count = 0;
+  for (const tracked of videos.values()) {
+    if (Boolean(tracked.thumbnail) === thumbnails) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function scanThumbnails(): void {
   const found = document.evaluate(THUMBNAIL_XPATH, document.body, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-  for (let index = 0; index < found.snapshotLength && videos.size < MAX_OVERLAYS; index += 1) {
+  let thumbnails = countTracked(true);
+  for (let index = 0; index < found.snapshotLength && thumbnails < MAX_THUMBNAILS; index += 1) {
     const element = found.snapshotItem(index) as Element | null;
     if (!element || NOT_THUMBNAILS.has(element.tagName) || videos.has(element) || insideTrackedThumbnail(element)) {
       continue;
@@ -366,6 +487,7 @@ function scanThumbnails(): void {
     const url = thumbnailSource(element);
     if (url) {
       trackThumbnail(element, url);
+      thumbnails += 1;
     }
   }
 }
@@ -427,21 +549,33 @@ function forgetDetached(): void {
   }
 }
 
+function scanVideos(): void {
+  let count = countTracked(false);
+  for (const video of document.querySelectorAll('video')) {
+    if (count >= MAX_OVERLAYS) {
+      break;
+    }
+    if (!videos.has(video) && !insideTrackedThumbnail(video)) {
+      trackVideo(video);
+      count += 1;
+    }
+  }
+}
+
 function scan(): void {
+  scanPendingSince = 0;
+  if (!extensionAlive()) {
+    retired = true;
+    deactivate();
+    return;
+  }
   forgetDetached();
   if (declarationsChanged) {
     declarationsChanged = false;
     reevaluateStreamed();
   }
+  scanVideos();
   scanThumbnails();
-  for (const video of document.querySelectorAll('video')) {
-    if (videos.size >= MAX_OVERLAYS) {
-      break;
-    }
-    if (!videos.has(video) && !insideTrackedThumbnail(video)) {
-      trackVideo(video);
-    }
-  }
   for (const audio of document.querySelectorAll('audio')) {
     if (inline.size >= MAX_INLINE) {
       break;
@@ -462,8 +596,45 @@ function scan(): void {
 }
 
 function scheduleScan(): void {
+  const now = Date.now();
+  if (scanPendingSince === 0) {
+    scanPendingSince = now;
+  }
+  if (now - scanPendingSince >= SCAN_MAX_WAIT_MS) {
+    return;
+  }
   window.clearTimeout(scanTimer);
   scanTimer = window.setTimeout(scan, SCAN_DEBOUNCE_MS);
+}
+
+function resetForNavigation(): void {
+  manifests.length = 0;
+  lastReport = '';
+  scheduleReport();
+  scheduleScan();
+}
+
+function onPageShow(event: PageTransitionEvent): void {
+  if (!event.persisted) {
+    return;
+  }
+  lastReport = '';
+  scheduleReport();
+}
+
+function onNavigate(event: Event): void {
+  const destination = (event as Event & { destination?: { url?: string } }).destination;
+  if (destination && destination.url && destination.url !== location.href) {
+    window.setTimeout(resetForNavigation, 0);
+  }
+}
+
+function navigationTarget(): EventTarget | null {
+  const holder = window as Window & { navigation?: EventTarget };
+  if (!holder.navigation) {
+    return null;
+  }
+  return holder.navigation;
 }
 
 function isOwnMutation(mutation: MutationRecord): boolean {
@@ -500,7 +671,12 @@ function activate(): void {
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: [DOWNLOAD_ATTRIBUTE] });
   window.addEventListener('scroll', schedulePosition, { passive: true, capture: true });
   window.addEventListener('resize', schedulePosition, { passive: true });
+  window.addEventListener('pageshow', onPageShow);
   document.addEventListener('fullscreenchange', schedulePosition);
+  const navigation = navigationTarget();
+  if (navigation) {
+    navigation.addEventListener('navigate', onNavigate);
+  }
   scan();
 }
 
@@ -510,14 +686,24 @@ function deactivate(): void {
     return;
   }
   active = false;
-  observer?.disconnect();
-  intersection?.disconnect();
+  if (observer) {
+    observer.disconnect();
+  }
+  if (intersection) {
+    intersection.disconnect();
+  }
   observer = null;
   intersection = null;
   window.clearTimeout(scanTimer);
+  scanPendingSince = 0;
   window.removeEventListener('scroll', schedulePosition, { capture: true });
   window.removeEventListener('resize', schedulePosition);
+  window.removeEventListener('pageshow', onPageShow);
   document.removeEventListener('fullscreenchange', schedulePosition);
+  const navigation = navigationTarget();
+  if (navigation) {
+    navigation.removeEventListener('navigate', onNavigate);
+  }
   for (const [video, tracked] of videos) {
     forgetVideo(video, tracked);
   }
@@ -527,7 +713,9 @@ function deactivate(): void {
   inline.clear();
   usedFallbacks.clear();
   window.clearTimeout(reportTimer);
-  report();
+  if (extensionAlive()) {
+    report();
+  }
 }
 
 async function start(): Promise<void> {
@@ -539,6 +727,9 @@ async function start(): Promise<void> {
   document.addEventListener(
     TAKEOVER_EVENT,
     () => {
+      if (extensionAlive()) {
+        return;
+      }
       retired = true;
       deactivate();
       try {
@@ -547,7 +738,6 @@ async function start(): Promise<void> {
         return;
       }
     },
-    { once: true },
   );
   const applySettings = (settings: Settings) => {
     showUnavailable = settings.videoShowUnavailable;

@@ -4,6 +4,7 @@ import { TtlCache } from '../utils/ttl-cache.js';
 import { createLimiter } from '../utils/limiter.js';
 import { classify, ttlFor, type AccessStatus } from './classification-engine.js';
 import type { OoniLookup } from './ooni-service.js';
+import type { NetworkResult } from './network-aggregate.js';
 import type { Probe } from './pakistan-probe.js';
 
 export interface CheckResult {
@@ -16,10 +17,12 @@ export interface CheckResult {
   method: string;
   network: { isp: string; asn: string; city: string };
   ttlSeconds: number;
+  networks?: NetworkResult[];
 }
 
 export interface AccessibilityService {
   check(domains: string[]): Promise<CheckResult[]>;
+  drain(): Promise<void>;
 }
 
 interface Dependencies {
@@ -28,16 +31,24 @@ interface Dependencies {
   repository: CheckRepository;
   network: ProbeNetwork;
   concurrency: number;
+  requestBudgetMs?: number;
+  maxInflight?: number;
   onError?: (error: unknown, domain: string) => void;
 }
 
 const METHOD = 'DNS + HTTPS/HTTP probe from Pakistan, cross-checked with OONI';
 const FAILURE_TTL_SECONDS = 60;
+const PENDING_TTL_SECONDS = 30;
+const DEFAULT_REQUEST_BUDGET_MS = 30_000;
+const DEFAULT_MAX_INFLIGHT = 500;
 
 export function createAccessibilityService(deps: Dependencies): AccessibilityService {
   const cache = new TtlCache<string, CheckResult>(20_000);
   const inflight = new Map<string, Promise<CheckResult>>();
+  const pendingSaves = new Set<Promise<void>>();
   const limit = createLimiter(deps.concurrency);
+  const budgetMs = deps.requestBudgetMs ?? DEFAULT_REQUEST_BUDGET_MS;
+  const maxInflight = deps.maxInflight ?? DEFAULT_MAX_INFLIGHT;
   const network = { isp: deps.network.isp, asn: deps.network.asn, city: deps.network.city };
 
   const base = (domain: string) => ({
@@ -61,7 +72,7 @@ export function createAccessibilityService(deps: Dependencies): AccessibilitySer
         ttlSeconds: ttlFor(status),
       };
       cache.set(domain, result, result.ttlSeconds * 1000);
-      deps.repository
+      const save = deps.repository
         .saveCheck({
           domain,
           country: result.country,
@@ -72,7 +83,9 @@ export function createAccessibilityService(deps: Dependencies): AccessibilitySer
           evidence,
           measurement,
         })
-        .catch((error) => deps.onError?.(error, domain));
+        .catch((error) => deps.onError?.(error, domain))
+        .finally(() => pendingSaves.delete(save));
+      pendingSaves.add(save);
       return result;
     } catch (error) {
       deps.onError?.(error, domain);
@@ -88,17 +101,45 @@ export function createAccessibilityService(deps: Dependencies): AccessibilitySer
     }
   }
 
+  function provisional(domain: string, reason: string): CheckResult {
+    return { ...base(domain), status: 'unknown', confidence: 0, evidence: [reason], ttlSeconds: PENDING_TTL_SECONDS };
+  }
+
   function checkOne(domain: string): Promise<CheckResult> {
     const cached = cache.get(domain);
-    if (cached) return Promise.resolve(cached);
+    if (cached) {
+      return Promise.resolve(cached);
+    }
     const pending = inflight.get(domain);
-    if (pending) return pending;
+    if (pending) {
+      return pending;
+    }
+    if (inflight.size >= maxInflight) {
+      return Promise.resolve(provisional(domain, 'server_busy'));
+    }
     const task = evaluate(domain).finally(() => inflight.delete(domain));
     inflight.set(domain, task);
     return task;
   }
 
-  return {
-    check: (domains) => Promise.all(domains.map(checkOne)),
-  };
+  async function check(domains: string[]): Promise<CheckResult[]> {
+    let timer: NodeJS.Timeout | undefined;
+    const expired = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), budgetMs);
+    });
+    try {
+      return await Promise.all(
+        domains.map(async (domain) => (await Promise.race([checkOne(domain), expired])) ?? provisional(domain, 'still_checking')),
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function drain(): Promise<void> {
+    await Promise.allSettled([...inflight.values()]);
+    await Promise.allSettled([...pendingSaves]);
+  }
+
+  return { check, drain };
 }

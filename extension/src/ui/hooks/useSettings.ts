@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Settings } from '../../core/types';
-import { loadSettings, onSettingsChanged, saveSettings } from '../../shared/storage';
+import { loadSettings, onSettingsChanged, saveSettings, type SettingsUpdate } from '../../shared/storage';
 
 export function useSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -10,7 +10,7 @@ export function useSettings() {
     return onSettingsChanged(setSettings);
   }, []);
 
-  const update = useCallback(async (patch: Partial<Settings>) => {
+  const update = useCallback(async (patch: SettingsUpdate) => {
     setSettings(await saveSettings(patch));
   }, []);
 

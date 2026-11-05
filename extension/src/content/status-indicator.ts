@@ -1,4 +1,6 @@
+import { archiveUrl, needsAlternatives } from '../core/alternatives';
 import { describeEvidence } from '../core/evidence';
+import { isSplitDecision, networksOf } from '../core/networks';
 import { formatConfidence, formatNetwork, formatRelative } from '../core/format';
 import { STATUS_META } from '../core/status-meta';
 import type { CheckResult, DisplayStatus } from '../core/types';
@@ -17,6 +19,7 @@ const BADGE_STYLES = `
 .pill { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; height: 18px; border: 1px solid #dadce0;
   border-radius: 9px; font: 500 11px/18px Arial, Helvetica, sans-serif; color: #3c4043; background: #fff; cursor: default; white-space: nowrap; }
 .dot { display: block; width: 7px; height: 7px; border-radius: 50%; flex: none; }
+:host([data-clickable]) .pill { cursor: pointer; }
 @media (prefers-color-scheme: dark) {
   .pill { background: #303134; border-color: #5f6368; color: #e8eaed; }
 }`;
@@ -33,6 +36,9 @@ const TOOLTIP_STYLES = `
 .title { font-weight: 700; margin-bottom: 2px; }
 .desc { color: #5f6368; margin-bottom: 8px; }
 .evidence { margin: 8px 0 0; padding: 8px 0 0 14px; border-top: 1px solid #ececec; color: #3c4043; }
+.networks { margin-top: 8px; padding-top: 8px; border-top: 1px solid #ececec; }
+.section { font-weight: 700; margin-bottom: 2px; }
+.hint { margin-top: 8px; color: #1a73e8; }
 @media (prefers-color-scheme: dark) {
   .tip { background: #303134; border-color: #5f6368; color: #e8eaed; }
   .key, .desc { color: #9aa0a6; }
@@ -55,7 +61,9 @@ function row(key: string, value: string): HTMLElement {
 function tooltipRows(status: DisplayStatus, result: CheckResult | null): HTMLElement[] {
   const meta = STATUS_META[status];
   const rows: HTMLElement[] = [element('div', 'title', meta.label), element('div', 'desc', meta.description)];
-  if (!result) return [...rows, row('Test location', 'Pakistan')];
+  if (!result) {
+    return [...rows, row('Test location', 'Pakistan')];
+  }
   const location = result.network.city !== 'unknown' ? `Pakistan (${result.network.city})` : 'Pakistan';
   rows.push(
     row('Last checked', formatRelative(result.lastChecked)),
@@ -64,13 +72,31 @@ function tooltipRows(status: DisplayStatus, result: CheckResult | null): HTMLEle
     row('Confidence', formatConfidence(result.confidence)),
     row('Network', formatNetwork(result.network)),
   );
+  const networks = networksOf(result);
+  if (networks.length > 1) {
+    const list = element('div', 'networks');
+    list.append(element('div', 'section', 'By network'));
+    for (const network of networks) {
+      list.append(row(network.isp, STATUS_META[network.status].label));
+    }
+    rows.push(list);
+  }
   const evidence = describeEvidence(result.evidence);
   if (evidence.length) {
     const list = element('ul', 'evidence');
-    for (const item of evidence) list.append(element('li', '', item));
+    for (const item of evidence) {
+      list.append(element('li', '', item));
+    }
     rows.push(list);
   }
+  if (needsAlternatives(status)) {
+    rows.push(element('div', 'hint', 'Click the badge to open an archived copy'));
+  }
   return rows;
+}
+
+function labelFor(status: DisplayStatus, result: CheckResult | null): string {
+  return result && isSplitDecision(result) ? 'Blocked on some ISPs' : STATUS_META[status].label;
 }
 
 const TOOLTIP_WIDTH = 260;
@@ -87,7 +113,9 @@ function shadowHost(tag: string, styles: string): { host: HTMLElement; shadow: S
 }
 
 function tooltip(): HTMLElement {
-  if (tooltipBox?.isConnected) return tooltipBox;
+  if (tooltipBox?.isConnected) {
+    return tooltipBox;
+  }
   const { host, shadow } = shadowHost(TOOLTIP_TAG, TOOLTIP_STYLES);
   tooltipBox = element('div', 'tip');
   tooltipBox.setAttribute('role', 'tooltip');
@@ -110,7 +138,9 @@ function showTooltip(target: HTMLElement, rows: HTMLElement[]): void {
 }
 
 export function hideTooltip(): void {
-  if (tooltipBox) tooltipBox.hidden = true;
+  if (tooltipBox) {
+    tooltipBox.hidden = true;
+  }
 }
 
 export function createIndicator(): Indicator {
@@ -122,12 +152,19 @@ export function createIndicator(): Indicator {
   shadow.append(pill);
   let current: { status: DisplayStatus; result: CheckResult | null } = { status: 'checking', result: null };
 
-  for (const type of ['click', 'mousedown', 'auxclick'] as const) {
+  for (const type of ['mousedown', 'auxclick'] as const) {
     host.addEventListener(type, (event) => {
       event.preventDefault();
       event.stopPropagation();
     });
   }
+  host.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (current.result && needsAlternatives(current.status)) {
+      window.open(archiveUrl(current.result.domain), '_blank', 'noopener,noreferrer');
+    }
+  });
   host.addEventListener('mouseenter', () => showTooltip(host, tooltipRows(current.status, current.result)));
   host.addEventListener('mouseleave', hideTooltip);
 
@@ -136,9 +173,11 @@ export function createIndicator(): Indicator {
     update(status, result) {
       current = { status, result };
       const meta = STATUS_META[status];
+      const text = labelFor(status, result);
       dot.style.background = meta.color;
-      label.textContent = meta.label;
-      host.setAttribute('aria-label', `Pakistan accessibility: ${meta.label}. ${meta.description}`);
+      label.textContent = text;
+      host.toggleAttribute('data-clickable', Boolean(result) && needsAlternatives(status));
+      host.setAttribute('aria-label', `Pakistan accessibility: ${text}. ${meta.description}`);
     },
     remove: () => host.remove(),
   };

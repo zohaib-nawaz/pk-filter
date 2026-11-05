@@ -46,13 +46,76 @@ function Action({ label, onClick }: { label: string; onClick: () => void }) {
   );
 }
 
-export function DownloadItem({ view, onPause, onResume, onCancel, onRetry, onOpen, onShow, onRemove }: DownloadItemProps) {
+interface ActionSpec {
+  label: string;
+  run: (view: DownloadView) => void;
+}
+
+function sizeText(view: DownloadView): string {
+  if (view.state === 'complete') {
+    return formatBytes(view.totalBytes);
+  }
+  if (view.totalBytes) {
+    return `${formatBytes(view.bytesReceived)} / ${formatBytes(view.totalBytes)}`;
+  }
+  return formatBytes(view.bytesReceived);
+}
+
+function statusText(view: DownloadView, saving: boolean): string {
+  if (saving) {
+    return 'Saving file';
+  }
+  if (view.kind === 'stream' && view.state === 'in_progress') {
+    return 'Downloading stream';
+  }
+  return STATUS_TEXT[view.state];
+}
+
+function percentText(percent: number | null, state: DownloadView['state']): string {
+  if (percent === null || state === 'complete') {
+    return '';
+  }
+  return ` · ${percent}%`;
+}
+
+function barWidth(percent: number | null, state: DownloadView['state']): number {
+  if (percent !== null) {
+    return percent;
+  }
+  if (state === 'in_progress') {
+    return 15;
+  }
+  return 0;
+}
+
+function renderError(error: string | null | undefined) {
+  if (!error) {
+    return null;
+  }
+  return <p className="text-xs text-red-600 dark:text-red-400">{error}</p>;
+}
+
+function actionsFor(view: DownloadView, saving: boolean, handlers: DownloadHandlers): ActionSpec[] {
+  const { state } = view;
+  const running = state === 'in_progress' || state === 'paused';
+  const opened = state === 'complete' && view.fileExists;
+  const candidates: Array<[boolean, ActionSpec]> = [
+    [state === 'in_progress' && !saving, { label: 'Pause', run: handlers.onPause }],
+    [state === 'paused', { label: 'Resume', run: handlers.onResume }],
+    [running && !saving, { label: 'Cancel', run: handlers.onCancel }],
+    [state === 'interrupted' && view.canResume, { label: 'Resume', run: handlers.onResume }],
+    [state === 'interrupted' || state === 'cancelled' || state === 'missing', { label: 'Retry', run: handlers.onRetry }],
+    [opened, { label: 'Open', run: handlers.onOpen }],
+    [opened, { label: 'Show in folder', run: handlers.onShow }],
+    [!running, { label: 'Remove', run: handlers.onRemove }],
+  ];
+  return candidates.filter(([shown]) => shown).map(([, action]) => action);
+}
+
+export function DownloadItem({ view, ...handlers }: DownloadItemProps) {
   const { record, state } = view;
   const percent = progressPercent(view);
-  const size = view.totalBytes ? `${formatBytes(view.bytesReceived)} / ${formatBytes(view.totalBytes)}` : formatBytes(view.bytesReceived);
-  const canRetry = state === 'interrupted' || state === 'cancelled' || state === 'missing';
   const saving = view.kind === 'stream' && percent === 100 && state === 'in_progress';
-  const statusText = saving ? 'Saving file' : view.kind === 'stream' && state === 'in_progress' ? 'Downloading stream' : STATUS_TEXT[state];
 
   return (
     <li className="flex flex-col gap-1.5 py-2.5">
@@ -65,24 +128,19 @@ export function DownloadItem({ view, onPause, onResume, onCancel, onRetry, onOpe
         </span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
-        <div className={`h-full ${BAR_COLOR[state]} transition-all`} style={{ width: `${percent ?? (state === 'in_progress' ? 15 : 0)}%` }} />
+        <div className={`h-full ${BAR_COLOR[state]} transition-all`} style={{ width: `${barWidth(percent, state)}%` }} />
       </div>
       <div className="flex items-center justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400">
         <span>
-          {statusText}
-          {percent !== null && state !== 'complete' ? ` · ${percent}%` : ''} · {state === 'complete' ? formatBytes(view.totalBytes) : size}
+          {statusText(view, saving)}
+          {percentText(percent, state)} · {sizeText(view)}
         </span>
       </div>
-      {view.error && <p className="text-xs text-red-600 dark:text-red-400">{view.error}</p>}
+      {renderError(view.error)}
       <div className="-ml-1.5 flex flex-wrap gap-0.5">
-        {state === 'in_progress' && !saving && <Action label="Pause" onClick={() => onPause(view)} />}
-        {state === 'paused' && <Action label="Resume" onClick={() => onResume(view)} />}
-        {(state === 'in_progress' || state === 'paused') && !saving && <Action label="Cancel" onClick={() => onCancel(view)} />}
-        {state === 'interrupted' && view.canResume && <Action label="Resume" onClick={() => onResume(view)} />}
-        {canRetry && <Action label="Retry" onClick={() => onRetry(view)} />}
-        {state === 'complete' && view.fileExists && <Action label="Open" onClick={() => onOpen(view)} />}
-        {state === 'complete' && view.fileExists && <Action label="Show in folder" onClick={() => onShow(view)} />}
-        {state !== 'in_progress' && state !== 'paused' && <Action label="Remove" onClick={() => onRemove(view)} />}
+        {actionsFor(view, saving, handlers).map((action) => (
+          <Action key={action.label} label={action.label} onClick={() => action.run(view)} />
+        ))}
       </div>
     </li>
   );

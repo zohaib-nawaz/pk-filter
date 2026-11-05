@@ -25,12 +25,16 @@ const INTERRUPT_MESSAGES: Record<string, string> = {
 };
 
 export function describeInterrupt(reason: string | undefined): string | null {
-  if (!reason) return null;
+  if (!reason) {
+    return null;
+  }
   return INTERRUPT_MESSAGES[reason] ?? 'Download failed';
 }
 
 export function formatBytes(bytes: number | null): string {
-  if (bytes === null || bytes <= 0) return 'Unknown size';
+  if (bytes === null || bytes <= 0) {
+    return 'Unknown size';
+  }
   const units = ['B', 'KB', 'MB', 'GB'];
   let value = bytes;
   let unit = 0;

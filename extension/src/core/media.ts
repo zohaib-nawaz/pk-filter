@@ -66,7 +66,9 @@ export type SourceKind = 'direct' | 'streaming' | 'blob' | 'unknown' | 'invalid'
 
 function isPrivateIpv4(host: string): boolean {
   const parts = host.split('.').map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return false;
+  }
   const [a, b] = parts as [number, number];
   return (
     a === 0 ||
@@ -83,22 +85,34 @@ function isPrivateIpv4(host: string): boolean {
 
 function isBlockedHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, '');
-  if (host.startsWith('[') || host.includes(':')) return true;
-  if (/^[\d.]+$/.test(host)) return isPrivateIpv4(host) || host.split('.').length !== 4;
-  if (!host.includes('.')) return true;
+  if (host.startsWith('[') || host.includes(':')) {
+    return true;
+  }
+  if (/^[\d.]+$/.test(host)) {
+    return isPrivateIpv4(host) || host.split('.').length !== 4;
+  }
+  if (!host.includes('.')) {
+    return true;
+  }
   return BLOCKED_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
 }
 
 export function safeHttpUrl(raw: string | null | undefined, base?: string): URL | null {
-  if (!raw) return null;
+  if (!raw) {
+    return null;
+  }
   let url: URL;
   try {
     url = new URL(raw, base);
   } catch {
     return null;
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  if (url.username || url.password || isBlockedHost(url.hostname)) return null;
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return null;
+  }
+  if (url.username || url.password || isBlockedHost(url.hostname)) {
+    return null;
+  }
   return url;
 }
 
@@ -116,12 +130,20 @@ export function isMediaExtension(extension: string | null): boolean {
 }
 
 export function sourceKind(raw: string | null | undefined, base?: string): SourceKind {
-  if (!raw) return 'invalid';
-  if (raw.startsWith('blob:') || raw.startsWith('mediasource:')) return 'blob';
+  if (!raw) {
+    return 'invalid';
+  }
+  if (raw.startsWith('blob:') || raw.startsWith('mediasource:')) {
+    return 'blob';
+  }
   const url = safeHttpUrl(raw, base);
-  if (!url) return 'invalid';
+  if (!url) {
+    return 'invalid';
+  }
   const extension = extensionFromPath(url);
-  if (extension && STREAMING_EXTENSIONS.has(extension)) return 'streaming';
+  if (extension && STREAMING_EXTENSIONS.has(extension)) {
+    return 'streaming';
+  }
   return isMediaExtension(extension) ? 'direct' : 'unknown';
 }
 
@@ -159,31 +181,63 @@ function startsWith(bytes: Uint8Array, signature: number[]): boolean {
 }
 
 function sniffMpegAudio(bytes: Uint8Array): string | null {
-  if (text(bytes, 0, 3) === 'ID3') return 'audio/mpeg';
-  if (bytes[0] !== 0xff || bytes.length < 2) return null;
+  if (text(bytes, 0, 3) === 'ID3') {
+    return 'audio/mpeg';
+  }
+  if (bytes[0] !== 0xff || bytes.length < 2) {
+    return null;
+  }
   const second = bytes[1] as number;
-  if ((second & 0xf6) === 0xf0) return 'audio/aac';
-  if ((second & 0xe0) === 0xe0 && ((second >> 1) & 0x03) !== 0) return 'audio/mpeg';
+  if ((second & 0xf6) === 0xf0) {
+    return 'audio/aac';
+  }
+  if ((second & 0xe0) === 0xe0 && ((second >> 1) & 0x03) !== 0) {
+    return 'audio/mpeg';
+  }
   return null;
 }
 
 export function sniffMediaType(bytes: Uint8Array): string | null {
   if (bytes.length >= 12 && text(bytes, 4, 4) === 'ftyp') {
     const brand = text(bytes, 8, 4);
-    if (brand === 'M4A ' || brand === 'M4B ') return 'audio/mp4';
-    if (brand === 'qt  ') return 'video/quicktime';
-    if (brand.startsWith('3g')) return 'video/3gpp';
+    if (brand === 'M4A ' || brand === 'M4B ') {
+      return 'audio/mp4';
+    }
+    if (brand === 'qt  ') {
+      return 'video/quicktime';
+    }
+    if (brand.startsWith('3g')) {
+      return 'video/3gpp';
+    }
     return 'video/mp4';
   }
-  if (startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3])) return text(bytes, 0, 64).includes('webm') ? 'video/webm' : 'video/x-matroska';
-  if (text(bytes, 0, 4) === 'OggS') return 'audio/ogg';
-  if (text(bytes, 0, 4) === 'fLaC') return 'audio/flac';
-  if (text(bytes, 0, 3) === 'FLV') return 'video/x-flv';
-  if (text(bytes, 0, 4) === 'RIFF' && text(bytes, 8, 4) === 'WAVE') return 'audio/wav';
-  if (text(bytes, 0, 4) === 'RIFF' && text(bytes, 8, 4) === 'AVI ') return 'video/x-msvideo';
-  if (startsWith(bytes, [0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11])) return 'video/x-ms-wmv';
-  if (startsWith(bytes, [0x00, 0x00, 0x01, 0xba])) return 'video/mpeg';
-  if (bytes[0] === 0x47 && bytes.length > 188 && bytes[188] === 0x47) return 'video/mp2t';
+  if (startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3])) {
+    return text(bytes, 0, 64).includes('webm') ? 'video/webm' : 'video/x-matroska';
+  }
+  if (text(bytes, 0, 4) === 'OggS') {
+    return 'audio/ogg';
+  }
+  if (text(bytes, 0, 4) === 'fLaC') {
+    return 'audio/flac';
+  }
+  if (text(bytes, 0, 3) === 'FLV') {
+    return 'video/x-flv';
+  }
+  if (text(bytes, 0, 4) === 'RIFF' && text(bytes, 8, 4) === 'WAVE') {
+    return 'audio/wav';
+  }
+  if (text(bytes, 0, 4) === 'RIFF' && text(bytes, 8, 4) === 'AVI ') {
+    return 'video/x-msvideo';
+  }
+  if (startsWith(bytes, [0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11])) {
+    return 'video/x-ms-wmv';
+  }
+  if (startsWith(bytes, [0x00, 0x00, 0x01, 0xba])) {
+    return 'video/mpeg';
+  }
+  if (bytes[0] === 0x47 && bytes.length > 188 && bytes[188] === 0x47) {
+    return 'video/mp2t';
+  }
   return sniffMpegAudio(bytes);
 }
 
@@ -197,10 +251,18 @@ const UNAVAILABLE: Record<number, string> = {
 export function classifyMediaResponse(response: MediaResponse): MediaInfo {
   const finalUrl = safeHttpUrl(response.url);
   const base = { url: response.url, extension: null, mime: null, sizeBytes: null };
-  if (!finalUrl) return { ...base, status: 'unsupported', reason: 'Redirected to an unsafe address' };
-  if (UNAVAILABLE[response.status]) return { ...base, status: 'unavailable', reason: UNAVAILABLE[response.status] as string };
-  if (response.status >= 500) return { ...base, status: 'unavailable', reason: 'The video server returned an error' };
-  if (response.status >= 400 || response.status < 200) return { ...base, status: 'unavailable', reason: `Video server answered ${response.status}` };
+  if (!finalUrl) {
+    return { ...base, status: 'unsupported', reason: 'Redirected to an unsafe address' };
+  }
+  if (UNAVAILABLE[response.status]) {
+    return { ...base, status: 'unavailable', reason: UNAVAILABLE[response.status] as string };
+  }
+  if (response.status >= 500) {
+    return { ...base, status: 'unavailable', reason: 'The video server returned an error' };
+  }
+  if (response.status >= 400 || response.status < 200) {
+    return { ...base, status: 'unavailable', reason: `Video server answered ${response.status}` };
+  }
 
   const declared = response.contentType?.split(';')[0]?.trim().toLowerCase() ?? null;
   const declaredIsMedia = declared !== null && (declared.startsWith('video/') || declared.startsWith('audio/') || STREAMING_MIMES.includes(declared));
@@ -222,12 +284,18 @@ export function classifyMediaResponse(response: MediaResponse): MediaInfo {
     const extension = extensionFromMime(mime);
     return extension ? downloadable(extension) : { ...base, mime, status: 'unsupported', reason: `Unsupported media format (${mime})` };
   }
-  if (mime !== null && GENERIC_BINARY.includes(mime) && isMediaExtension(pathExtension)) return downloadable(pathExtension as string);
+  if (mime !== null && GENERIC_BINARY.includes(mime) && isMediaExtension(pathExtension)) {
+    return downloadable(pathExtension as string);
+  }
   return { ...base, mime, status: 'unsupported', reason: 'This link is not a video or audio file' };
 }
 
 export function describeSource(kind: SourceKind): string {
-  if (kind === 'blob') return 'This media is streamed in pieces by the page and has no single file to download';
-  if (kind === 'streaming') return 'Streaming playlist (HLS/DASH) is not supported';
+  if (kind === 'blob') {
+    return 'This media is streamed in pieces by the page and has no single file to download';
+  }
+  if (kind === 'streaming') {
+    return 'Streaming playlist (HLS/DASH) is not supported';
+  }
   return 'No downloadable media source found';
 }

@@ -33,6 +33,14 @@ DNS failure alone, a timeout alone, or any single HTTP status code is never trea
 
 Cache durations: accessible 20 min, blocked / possibly blocked 15 min, server error 10 min, unknown 5 min, OONI history 12 h. The extension caches the same durations in `chrome.storage.local` (users can raise the minimum in Settings).
 
+## Search engines, site status and ISPs
+
+- **Google, Bing and DuckDuckGo** results all get badges and filtering. Bing's `bing.com/ck/a` redirect links are decoded (`u=a1…`), falling back to the displayed URL.
+- **Popup → This site** shows the open tab's status (needs only `activeTab`), when it was checked, each ISP's result, the last 30 days of history and, for blocked sites, an archived copy (web.archive.org) and the OONI Explorer evidence page. Clicking a blocked badge in search results also opens the archived copy.
+- **Several ISPs.** Run the same backend on VPSes in other Pakistani networks (each with its own `PROBE_ISP`/`PROBE_ASN` and the same `PROBE_TOKEN`), then list them on the main server in `PEER_PROBES=https://jazz-probe.example.com,https://zong-probe.example.com`. The main server asks every peer through the token-protected `POST /api/v1/probe`, returns `networks` per result, and combines them: blocked only when every measured network blocks the site, "possibly blocked (some ISPs)" when they disagree. With no peers the API answers exactly as before.
+- **Settings → Measurement network** lets users follow one ISP's result instead of the combined one.
+- **History** comes from `GET /api/v1/history?domain=…` (last 30 days, worst status per day, and `blockedSince` for the current blocking streak). It needs `DATABASE_URL`; without a database the popup simply hides the history strip.
+
 ## Video downloader (optional)
 
 Off by default. Turn it on in **Settings → Video downloader**; Chrome then asks for `downloads`, `notifications`, `scripting` and site access. Turning it off removes those permissions again.

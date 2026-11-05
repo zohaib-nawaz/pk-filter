@@ -22,11 +22,17 @@ export function mediaUrlsFromJsonLd(text: string): string[] {
       queue.push(...node);
       continue;
     }
-    if (!node || typeof node !== 'object') continue;
+    if (!node || typeof node !== 'object') {
+      continue;
+    }
     const record = node as Record<string, unknown>;
-    if (isMediaNode(record) && typeof record.contentUrl === 'string') urls.push(record.contentUrl);
+    if (isMediaNode(record) && typeof record.contentUrl === 'string') {
+      urls.push(record.contentUrl);
+    }
     for (const value of Object.values(record)) {
-      if (value && typeof value === 'object') queue.push(value);
+      if (value && typeof value === 'object') {
+        queue.push(value);
+      }
     }
   }
   return urls;

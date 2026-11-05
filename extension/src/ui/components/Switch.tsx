@@ -5,12 +5,33 @@ interface SwitchProps {
   onChange: (checked: boolean) => void;
 }
 
+function renderDescription(description: string | undefined) {
+  if (!description) {
+    return null;
+  }
+  return <span className="block text-xs text-neutral-500 dark:text-neutral-400">{description}</span>;
+}
+
+function trackClass(checked: boolean): string {
+  if (checked) {
+    return 'bg-emerald-600';
+  }
+  return 'bg-neutral-300 dark:bg-neutral-600';
+}
+
+function knobClass(checked: boolean): string {
+  if (checked) {
+    return 'translate-x-4';
+  }
+  return '';
+}
+
 export function Switch({ checked, label, description, onChange }: SwitchProps) {
   return (
     <label className="flex cursor-pointer items-center justify-between gap-4">
       <span className="min-w-0">
         <span className="block text-sm font-medium">{label}</span>
-        {description && <span className="block text-xs text-neutral-500 dark:text-neutral-400">{description}</span>}
+        {renderDescription(description)}
       </span>
       <button
         type="button"
@@ -18,9 +39,9 @@ export function Switch({ checked, label, description, onChange }: SwitchProps) {
         aria-checked={checked}
         aria-label={label}
         onClick={() => onChange(!checked)}
-        className={`relative h-5 w-9 flex-none rounded-full transition-colors ${checked ? 'bg-emerald-600' : 'bg-neutral-300 dark:bg-neutral-600'}`}
+        className={`relative h-5 w-9 flex-none rounded-full transition-colors ${trackClass(checked)}`}
       >
-        <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : ''}`} />
+        <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${knobClass(checked)}`} />
       </button>
     </label>
   );

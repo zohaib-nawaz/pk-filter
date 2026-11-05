@@ -85,7 +85,9 @@ export function createVideoButton(variant: VideoButtonVariant, onStateChange?: (
   host.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (state !== 'idle' && ACTIVE_STATES.has(state)) handler?.();
+    if (state !== 'idle' && ACTIVE_STATES.has(state)) {
+      handler?.();
+    }
   });
 
   return {

@@ -19,8 +19,11 @@ export async function prepareDownload(button: VideoButton, url: string, title: s
   const start = async () => {
     button.set('starting', 'Starting download…');
     const result = await sendRequest({ type: 'download', url: info.url, title });
-    if (result?.ok) button.set('started', 'Download started. Track it in the extension popup.');
-    else button.set('error', `${result?.error ?? 'Could not start the download'}. Click to retry.`);
+    if (result?.ok) {
+      button.set('started', 'Download started. Track it in the extension popup.');
+    } else {
+      button.set('error', `${result?.error ?? 'Could not start the download'}. Click to retry.`);
+    }
   };
   button.onActivate(() => void start());
   button.set('ready', `Download ${detail}`);

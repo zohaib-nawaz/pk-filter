@@ -18,7 +18,9 @@ const limit = createLimiter(3);
 function remember(key: string, info: MediaInfo): MediaInfo {
   cache.delete(key);
   cache.set(key, { info, expiresAt: Date.now() + (info.status === 'downloadable' ? OK_TTL_MS : FAILURE_TTL_MS) });
-  if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value as string);
+  if (cache.size > MAX_CACHE) {
+    cache.delete(cache.keys().next().value as string);
+  }
   return info;
 }
 
@@ -36,12 +38,16 @@ function declaresMedia(response: Response): boolean {
 
 async function readStart(response: Response): Promise<Uint8Array> {
   const reader = response.body?.getReader();
-  if (!reader) return new Uint8Array();
+  if (!reader) {
+    return new Uint8Array();
+  }
   const chunks: Uint8Array[] = [];
   let length = 0;
   while (length < SNIFF_BYTES) {
     const { done, value } = await reader.read();
-    if (done || !value) break;
+    if (done || !value) {
+      break;
+    }
     chunks.push(value);
     length += value.byteLength;
   }
@@ -52,7 +58,9 @@ async function readStart(response: Response): Promise<Uint8Array> {
     const part = chunk.subarray(0, out.length - offset);
     out.set(part, offset);
     offset += part.length;
-    if (offset >= out.length) break;
+    if (offset >= out.length) {
+      break;
+    }
   }
   return out;
 }
@@ -60,8 +68,12 @@ async function readStart(response: Response): Promise<Uint8Array> {
 async function probe(url: URL): Promise<Probe> {
   const init: RequestInit = { credentials: 'include', redirect: 'follow', cache: 'no-store' };
   const head = await fetch(url, { ...init, method: 'HEAD', signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => null);
-  if (head && head.ok && declaresMedia(head)) return { response: head, sniffed: null };
-  if (head && GONE.has(head.status)) return { response: head, sniffed: null };
+  if (head && head.ok && declaresMedia(head)) {
+    return { response: head, sniffed: null };
+  }
+  if (head && GONE.has(head.status)) {
+    return { response: head, sniffed: null };
+  }
   try {
     const ranged = await fetch(url, {
       ...init,
@@ -70,10 +82,14 @@ async function probe(url: URL): Promise<Probe> {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     const sniffed = ranged.ok ? sniffMediaType(await readStart(ranged)) : null;
-    if (!ranged.ok) await ranged.body?.cancel().catch(() => undefined);
+    if (!ranged.ok) {
+      await ranged.body?.cancel().catch(() => undefined);
+    }
     return { response: ranged, sniffed };
   } catch (error) {
-    if (head) return { response: head, sniffed: null };
+    if (head) {
+      return { response: head, sniffed: null };
+    }
     throw error;
   }
 }
@@ -84,12 +100,18 @@ function unsupported(url: string, status: MediaInfo['status'], reason: string): 
 
 export async function inspectMedia(raw: string): Promise<MediaInfo> {
   const kind = sourceKind(raw);
-  if (kind === 'blob' || kind === 'streaming') return unsupported(raw, 'streaming', describeSource(kind));
+  if (kind === 'blob' || kind === 'streaming') {
+    return unsupported(raw, 'streaming', describeSource(kind));
+  }
   const url = safeHttpUrl(raw);
-  if (!url) return unsupported(raw, 'unsupported', 'Invalid or unsafe video address');
+  if (!url) {
+    return unsupported(raw, 'unsupported', 'Invalid or unsafe video address');
+  }
   const key = url.toString();
   const cached = cache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.info;
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.info;
+  }
   if (!(await hasDownloaderPermissions())) {
     return unsupported(key, 'unsupported', 'Turn on the video downloader in the extension settings');
   }

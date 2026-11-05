@@ -13,7 +13,9 @@ export class TtlCache<K, V> {
 
   get(key: K): V | undefined {
     const entry = this.entries.get(key);
-    if (!entry) return undefined;
+    if (!entry) {
+      return undefined;
+    }
     if (entry.expiresAt <= this.now()) {
       this.entries.delete(key);
       return undefined;
@@ -26,7 +28,9 @@ export class TtlCache<K, V> {
     this.entries.set(key, { value, expiresAt: this.now() + ttlMs });
     while (this.entries.size > this.maxEntries) {
       const oldest = this.entries.keys().next();
-      if (oldest.done) break;
+      if (oldest.done) {
+        break;
+      }
       this.entries.delete(oldest.value);
     }
   }

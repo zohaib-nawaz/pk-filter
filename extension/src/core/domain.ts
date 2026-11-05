@@ -28,9 +28,13 @@ function parseUrl(value: string): URL | null {
 
 export function normalizeDomain(hostname: string): string | null {
   const host = hostname.trim().toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
-  if (host.length > 253) return null;
+  if (host.length > 253) {
+    return null;
+  }
   const labels = host.split('.');
-  if (labels.length < 2 || !TLD.test(labels.at(-1) ?? '')) return null;
+  if (labels.length < 2 || !TLD.test(labels.at(-1) ?? '')) {
+    return null;
+  }
   return labels.every((label) => LABEL.test(label)) ? host : null;
 }
 
@@ -39,9 +43,13 @@ export function isGoogleHost(hostname: string): boolean {
 }
 
 export function domainFromHref(href: string | null, base: string): string | null {
-  if (!href) return null;
+  if (!href) {
+    return null;
+  }
   const url = parseUrl(new URL(href, base).toString());
-  if (!url) return null;
+  if (!url) {
+    return null;
+  }
   if (isGoogleHost(url.hostname)) {
     const target = url.searchParams.get('q') ?? url.searchParams.get('url');
     const inner = target ? parseUrl(target) : null;
@@ -52,7 +60,9 @@ export function domainFromHref(href: string | null, base: string): string | null
 
 export function domainFromDisplayedUrl(text: string | null): string | null {
   const first = text?.trim().split(/\s|›/)[0] ?? '';
-  if (!URL_LIKE.test(first)) return null;
+  if (!URL_LIKE.test(first)) {
+    return null;
+  }
   const url = parseUrl(first.includes('://') ? first : `https://${first}`);
   return url && !isGoogleHost(url.hostname) ? normalizeDomain(url.hostname) : null;
 }
@@ -60,4 +70,28 @@ export function domainFromDisplayedUrl(text: string | null): string | null {
 export function domainFromSiteName(text: string | null): string | null {
   const name = text?.split('·')[0]?.trim().toLowerCase() ?? '';
   return PLATFORM_DOMAINS[name] ?? null;
+}
+
+const BING_HOST = /(^|\.)bing\.com$/;
+
+export function isBingHost(hostname: string): boolean {
+  return BING_HOST.test(hostname.toLowerCase());
+}
+
+export function domainFromBingHref(href: string | null, base: string): string | null {
+  if (!href) {
+    return null;
+  }
+  try {
+    const url = new URL(href, base);
+    const encoded = url.searchParams.get('u');
+    if (!isBingHost(url.hostname) || !encoded?.startsWith('a1')) {
+      return null;
+    }
+    const base64 = encoded.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+    const target = parseUrl(atob(base64 + '='.repeat((4 - (base64.length % 4)) % 4)));
+    return target && !isBingHost(target.hostname) ? normalizeDomain(target.hostname) : null;
+  } catch {
+    return null;
+  }
 }

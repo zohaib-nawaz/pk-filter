@@ -13,6 +13,7 @@ interface RunningJob {
 const CONCURRENCY = 4;
 const ATTEMPTS = 3;
 const PROGRESS_INTERVAL_MS = 500;
+const SEGMENT_TIMEOUT_MS = 30_000;
 const jobs = new Map<string, RunningJob>();
 const blobUrls = new Map<string, string[]>();
 
@@ -20,15 +21,35 @@ function emit(event: OffscreenEvent): void {
   void chrome.runtime.sendMessage(event).catch(() => undefined);
 }
 
-async function fetchSegment(segment: StreamSegment, signal: AbortSignal): Promise<SegmentChunk> {
-  const headers: HeadersInit = segment.range ? { range: `bytes=${segment.range.start}-${segment.range.end}` } : {};
-  const response = await fetch(segment.url, { credentials: 'include', signal, headers });
-  if (segment.range && response.status === 200) throw new SegmentError('The stream server ignored the byte range request', false);
+function rangeHeaders(segment: StreamSegment): HeadersInit {
+  if (!segment.range) {
+    return {};
+  }
+  return { range: `bytes=${segment.range.start}-${segment.range.end}` };
+}
+
+async function download(segment: StreamSegment, signal: AbortSignal): Promise<SegmentChunk> {
+  const response = await fetch(segment.url, { credentials: 'include', signal, headers: rangeHeaders(segment) });
+  if (segment.range && response.status === 200) {
+    throw new SegmentError('The stream server ignored the byte range request', false);
+  }
   if (!response.ok) {
     const retryable = response.status >= 500 || response.status === 429;
     throw new SegmentError(retryable ? `Stream server error ${response.status}` : `Stream segment returned ${response.status}`, retryable);
   }
   return new Uint8Array(await response.arrayBuffer());
+}
+
+async function fetchSegment(segment: StreamSegment, signal: AbortSignal): Promise<SegmentChunk> {
+  const timeout = AbortSignal.timeout(SEGMENT_TIMEOUT_MS);
+  try {
+    return await download(segment, AbortSignal.any([signal, timeout]));
+  } catch (error) {
+    if (timeout.aborted && !signal.aborted) {
+      throw new SegmentError('The stream server stopped responding', true);
+    }
+    throw error;
+  }
 }
 
 function fileName(id: string, index: number, extension: string): string {
@@ -38,7 +59,9 @@ function fileName(id: string, index: number, extension: string): string {
 async function removeFiles(id: string): Promise<void> {
   const root = await navigator.storage.getDirectory();
   for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) {
-    if (name.startsWith(`${id}-`)) await root.removeEntry(name).catch(() => undefined);
+    if (name.startsWith(`${id}-`)) {
+      await root.removeEntry(name).catch(() => undefined);
+    }
   }
 }
 
@@ -144,6 +167,24 @@ async function saveCombined(context: JobContext, video: StreamTrack, audio: Stre
   return true;
 }
 
+function failureText(cancelled: boolean, error: unknown): string {
+  if (cancelled) {
+    return 'Cancelled';
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Stream download failed';
+}
+
+async function saveCombinedIfPossible(context: JobContext, plan: StreamPlan): Promise<boolean> {
+  const [video, audio] = plan.tracks;
+  if (!plan.combine || !video || !audio) {
+    return false;
+  }
+  return saveCombined(context, video, audio);
+}
+
 async function run(id: string, plan: StreamPlan): Promise<void> {
   const job: RunningJob = { abort: new AbortController(), paused: false, resume: null, urls: [] };
   jobs.set(id, job);
@@ -157,25 +198,34 @@ async function run(id: string, plan: StreamPlan): Promise<void> {
     progress: (added) => {
       done += 1;
       bytes += added;
-      if (Date.now() - lastEmit < PROGRESS_INTERVAL_MS) return;
+      if (Date.now() - lastEmit < PROGRESS_INTERVAL_MS) {
+        return;
+      }
       lastEmit = Date.now();
       emit({ type: 'stream-progress', id, done, bytes });
     },
-    waitIfPaused: () => (job.paused ? new Promise<void>((resolve) => (job.resume = resolve)) : Promise.resolve()),
+    waitIfPaused: () => {
+      if (!job.paused) {
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve) => {
+        job.resume = resolve;
+      });
+    },
     flush: () => emit({ type: 'stream-progress', id, done, bytes }),
   };
 
   try {
-    const [video, audio] = plan.tracks;
-    const combined = plan.combine && video && audio ? await saveCombined(context, video, audio) : false;
-    if (!combined) {
-      if (plan.combine) emit({ type: 'stream-split', id, trackCount: plan.tracks.length });
+    if (!(await saveCombinedIfPossible(context, plan))) {
+      if (plan.combine) {
+        emit({ type: 'stream-split', id, trackCount: plan.tracks.length });
+      }
       await saveSeparately(context, plan.tracks);
     }
   } catch (error) {
     const cancelled = job.abort.signal.aborted;
-    await removeFiles(id);
-    emit({ type: 'stream-failed', id, cancelled, error: cancelled ? 'Cancelled' : error instanceof Error ? error.message : 'Stream download failed' });
+    await cleanup(id);
+    emit({ type: 'stream-failed', id, cancelled, error: failureText(cancelled, error) });
   } finally {
     jobs.delete(id);
   }
@@ -183,27 +233,51 @@ async function run(id: string, plan: StreamPlan): Promise<void> {
 
 function control(id: string, action: 'pause' | 'resume' | 'cancel'): void {
   const job = jobs.get(id);
-  if (!job) return;
-  if (action === 'pause') job.paused = true;
-  if (action === 'resume' || action === 'cancel') {
-    job.paused = false;
-    job.resume?.();
-    job.resume = null;
+  if (!job) {
+    return;
   }
-  if (action === 'cancel') job.abort.abort();
+  if (action === 'pause') {
+    job.paused = true;
+    return;
+  }
+  job.paused = false;
+  if (job.resume) {
+    job.resume();
+  }
+  job.resume = null;
+  if (action === 'cancel') {
+    job.abort.abort();
+  }
 }
 
 async function cleanup(id: string): Promise<void> {
-  for (const url of blobUrls.get(id) ?? []) URL.revokeObjectURL(url);
+  const urls = blobUrls.get(id);
+  if (urls) {
+    for (const url of urls) {
+      URL.revokeObjectURL(url);
+    }
+  }
   blobUrls.delete(id);
   await removeFiles(id);
 }
 
-chrome.runtime.onMessage.addListener((message: OffscreenCommand, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id || message?.target !== 'offscreen') return false;
-  if (message.type === 'run') void run(message.id, message.plan);
-  if (message.type === 'control') control(message.id, message.action);
-  if (message.type === 'cleanup') void cleanup(message.id);
+function fromServiceWorker(sender: chrome.runtime.MessageSender): boolean {
+  return sender.id === chrome.runtime.id && !sender.tab && sender.url !== location.href;
+}
+
+chrome.runtime.onMessage.addListener((message: OffscreenCommand | null, sender, sendResponse) => {
+  if (!fromServiceWorker(sender) || !message || message.target !== 'offscreen') {
+    return false;
+  }
+  if (message.type === 'run') {
+    void run(message.id, message.plan);
+  }
+  if (message.type === 'control') {
+    control(message.id, message.action);
+  }
+  if (message.type === 'cleanup') {
+    void cleanup(message.id);
+  }
   sendResponse({ ok: true });
   return false;
 });

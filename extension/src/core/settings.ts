@@ -11,13 +11,16 @@ export const DEFAULT_SETTINGS: Settings = {
   videoOnPages: true,
   videoShowUnavailable: false,
   streamDomains: [],
+  preferredIsp: '',
 };
 
 export const MAX_STREAM_DOMAINS = 50;
 
 export function parseStreamDomain(input: string): string | null {
   const raw = input.trim();
-  if (!raw) return null;
+  if (!raw) {
+    return null;
+  }
   try {
     return normalizeDomain(new URL(raw.includes('://') ? raw : `https://${raw}`).hostname);
   } catch {
@@ -26,7 +29,9 @@ export function parseStreamDomain(input: string): string | null {
 }
 
 function streamDomainList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value)) {
+    return [];
+  }
   const domains = value.map((item) => (typeof item === 'string' ? parseStreamDomain(item) : null)).filter((item): item is string => item !== null);
   return [...new Set(domains)].slice(0, MAX_STREAM_DOMAINS);
 }
@@ -52,7 +57,10 @@ function flag(value: unknown, fallback: boolean): boolean {
 }
 
 export function sanitizeSettings(input: unknown): Settings {
-  const raw = (input ?? {}) as Partial<Record<keyof Settings, unknown>>;
+  if (!input || typeof input !== 'object') {
+    return { ...DEFAULT_SETTINGS, streamDomains: [] };
+  }
+  const raw = input as Partial<Record<keyof Settings, unknown>>;
   return {
     enabled: flag(raw.enabled, DEFAULT_SETTINGS.enabled),
     filterMode: MODES.has(raw.filterMode as FilterMode) ? (raw.filterMode as FilterMode) : DEFAULT_SETTINGS.filterMode,
@@ -63,5 +71,6 @@ export function sanitizeSettings(input: unknown): Settings {
     videoOnPages: flag(raw.videoOnPages, DEFAULT_SETTINGS.videoOnPages),
     videoShowUnavailable: flag(raw.videoShowUnavailable, DEFAULT_SETTINGS.videoShowUnavailable),
     streamDomains: streamDomainList(raw.streamDomains),
+    preferredIsp: typeof raw.preferredIsp === 'string' ? raw.preferredIsp.trim().slice(0, 64) : DEFAULT_SETTINGS.preferredIsp,
   };
 }

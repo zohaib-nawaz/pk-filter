@@ -30,7 +30,9 @@ async function fetchWithRetry<T>(item: T, pipeline: SegmentPipeline<T>): Promise
       return await pipeline.fetchSegment(item, pipeline.signal);
     } catch (error) {
       const retryable = !(error instanceof SegmentError) || error.retryable;
-      if (pipeline.signal.aborted || !retryable || attempt >= pipeline.attempts) throw error;
+      if (pipeline.signal.aborted || !retryable || attempt >= pipeline.attempts) {
+        throw error;
+      }
       await delay(500 * 2 ** (attempt - 1));
     }
   }
@@ -51,7 +53,9 @@ export async function runSegments<T>(pipeline: SegmentPipeline<T>): Promise<void
 
   for (let index = 0; index < pipeline.items.length; index += 1) {
     await pipeline.waitIfPaused();
-    if (pipeline.signal.aborted) throw new SegmentError('Cancelled', false);
+    if (pipeline.signal.aborted) {
+      throw new SegmentError('Cancelled', false);
+    }
     launch();
     const chunk = await (pending.get(index) as Promise<SegmentChunk>);
     pending.delete(index);

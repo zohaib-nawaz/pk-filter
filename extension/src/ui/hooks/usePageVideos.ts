@@ -16,13 +16,19 @@ export function usePageVideos() {
   const load = useCallback(async () => {
     const tabId = (await activeTab())?.id;
     const response = tabId === undefined ? null : await sendRequest({ type: 'tab-videos', tabId });
-    setVideos(response?.videos ?? []);
+    if (!response) {
+      setVideos([]);
+      return;
+    }
+    setVideos(response.videos);
   }, []);
 
   useEffect(() => {
     void load();
     const onChanged = (_changes: unknown, area: string) => {
-      if (area === 'session') void load();
+      if (area === 'session') {
+        void load();
+      }
     };
     chrome.storage.onChanged.addListener(onChanged);
     return () => chrome.storage.onChanged.removeListener(onChanged);

@@ -7,9 +7,13 @@ export function useVideoDownloader(settings: Settings | null, update: (patch: Pa
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!settings?.videoDownloader) return;
+    if (!settings?.videoDownloader) {
+      return;
+    }
     void hasDownloaderPermissions().then((granted) => {
-      if (!granted) void update({ videoDownloader: false });
+      if (!granted) {
+        void update({ videoDownloader: false });
+      }
     });
   }, [settings?.videoDownloader, update]);
 

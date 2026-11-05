@@ -26,24 +26,40 @@ function unavailable(domain: string): CheckResult {
   };
 }
 
+function serviceError(error: unknown): string {
+  const unreachable = error instanceof TypeError || (error instanceof DOMException && error.name === 'TimeoutError');
+  if (unreachable || !(error instanceof Error)) {
+    return 'Could not reach the checking service';
+  }
+  return error.message;
+}
+
+async function remember(results: CheckResult[]): Promise<void> {
+  const now = Date.now();
+  try {
+    await writeCache(results, await loadSettings(), now);
+  } catch {
+    await pruneCache(now).catch(() => undefined);
+  }
+  await writeSync({ lastSync: new Date(now).toISOString(), lastError: null }).catch(() => undefined);
+}
+
 async function fetchBatch(domains: string[]): Promise<Map<string, CheckResult>> {
   if (Date.now() < pausedUntil) {
     return new Map();
   }
+  let results: CheckResult[];
   try {
-    const results = await postCheck(domains);
-    failures = 0;
-    const now = Date.now();
-    await writeCache(results, await loadSettings(), now);
-    await writeSync({ lastSync: new Date(now).toISOString(), lastError: null });
-    return new Map(results.map((result) => [result.domain, result]));
+    results = await postCheck(domains);
   } catch (error) {
     failures += 1;
     pausedUntil = Date.now() + backoffDelay(failures);
-    const unreachable = error instanceof TypeError || (error instanceof DOMException && error.name === 'TimeoutError');
-    await writeSync({ lastError: unreachable || !(error instanceof Error) ? 'Could not reach the checking service' : error.message });
+    await writeSync({ lastError: serviceError(error) }).catch(() => undefined);
     return new Map();
   }
+  failures = 0;
+  await remember(results);
+  return new Map(results.map((result) => [result.domain, result]));
 }
 
 function schedule(domains: string[]): void {

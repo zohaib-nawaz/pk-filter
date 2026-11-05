@@ -19,7 +19,9 @@ const HTTP_TIMEOUT_MS = 6000;
 
 async function resolveTarget(domain: string): Promise<DnsResult> {
   const apex = await checkDns(domain);
-  if (!apex.error || apex.manipulated) return apex;
+  if (!apex.error || apex.manipulated) {
+    return apex;
+  }
   const www = await checkDns(`www.${domain}`);
   return www.error ? apex : www;
 }

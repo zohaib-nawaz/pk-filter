@@ -108,4 +108,33 @@ describe('planFromDash', () => {
     expect(() => planFromDash(numbered.replace('</Period>', '</Period><Period></Period>'), BASE)).toThrow('several parts');
     expect(() => planFromDash('<html><body>nope</body></html>', BASE)).toThrow('not a DASH stream');
   });
+
+  it('decodes escaped characters in signed segment urls', () => {
+    const plan = planFromDash(
+      mpd(`<AdaptationSet contentType="video" mimeType="video/mp4"><SegmentTemplate duration="5" media="v$Number$.m4s?token=a&amp;exp=1" initialization="init.mp4?t=&quot;x&quot;"/><Representation id="v" bandwidth="9"/></AdaptationSet>`, 'type="static" mediaPresentationDuration="PT10S"'),
+      BASE,
+    );
+    expect(plan.tracks[0]?.segments[0]?.url).toBe('https://cdn.example.com/show/v1.m4s?token=a&exp=1');
+    expect(parseXml('<a b="x>y"><c>1 &lt; 2</c></a>').children[0]?.text).toBe('1 < 2');
+    expect(parseXml('<a b="x>y"/>').attrs.b).toBe('x>y');
+  });
+
+  it('reads full ISO durations', () => {
+    const body = `<AdaptationSet contentType="video" mimeType="video/mp4"><SegmentTemplate duration="10" media="v$Number$.m4s"/><Representation id="v" bandwidth="9"/></AdaptationSet>`;
+    expect(planFromDash(mpd(body, 'type="static" mediaPresentationDuration="P0Y0M0DT0H3M30.000S"'), BASE).durationSeconds).toBe(210);
+    expect(planFromDash(mpd(body, 'type="static" mediaPresentationDuration="PT1.5H"'), BASE).tracks[0]?.segments).toHaveLength(540);
+  });
+
+  it('refuses a template without a usable duration instead of saving the manifest', () => {
+    const body = `<AdaptationSet contentType="video" mimeType="video/mp4"><SegmentTemplate duration="10" media="v$Number$.m4s"/><Representation id="v" bandwidth="9"/></AdaptationSet>`;
+    expect(() => planFromDash(mpd(body, 'type="static"'), BASE)).toThrow('no video segments');
+  });
+
+  it('counts open-ended timelines from the presentation time offset', () => {
+    const plan = planFromDash(
+      mpd(`<AdaptationSet contentType="video" mimeType="video/mp4"><SegmentTemplate timescale="10" presentationTimeOffset="100000" media="v$Time$.m4s"><SegmentTimeline><S t="100000" d="20" r="-1"/></SegmentTimeline></SegmentTemplate><Representation id="v" bandwidth="9"/></AdaptationSet>`, 'type="static" mediaPresentationDuration="PT10S"'),
+      BASE,
+    );
+    expect(plan.tracks[0]?.segments).toHaveLength(5);
+  });
 });

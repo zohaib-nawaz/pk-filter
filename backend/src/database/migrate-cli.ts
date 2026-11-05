@@ -7,7 +7,7 @@ if (!config.databaseUrl) {
   process.exit(1);
 }
 
-const pool = createPool(config.databaseUrl);
+const pool = createPool(config.databaseUrl, (error) => console.error('database_error', error.message));
 const ran = await migrate(pool);
 console.log(ran.length ? `Applied: ${ran.join(', ')}` : 'Database is up to date');
 await pool.end();

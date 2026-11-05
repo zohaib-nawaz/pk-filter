@@ -7,7 +7,9 @@ const STREAMING_MESSAGE = 'Streaming video, not a direct file. It cannot be down
 
 function hasDuration(container: HTMLElement): boolean {
   for (const span of container.querySelectorAll('span')) {
-    if (span.childElementCount === 0 && looksLikeDuration(span.textContent)) return true;
+    if (span.childElementCount === 0 && looksLikeDuration(span.textContent)) {
+      return true;
+    }
   }
   return false;
 }

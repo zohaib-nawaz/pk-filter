@@ -4,6 +4,10 @@ import { safeHttpUrl } from './media';
 const MAX_SEGMENTS = 20_000;
 export const REST_OF_FILE = Number.MAX_SAFE_INTEGER;
 const ATTR = /([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+)))?/g;
+const ENTITY = /&(?:#(\d+)|#x([0-9a-f]+)|(amp|lt|gt|quot|apos));/gi;
+const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const DURATION = /^P(?:(\d+(?:\.\d+)?)Y)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i;
+const DURATION_UNITS = [365 * 86_400, 30 * 86_400, 86_400, 3_600, 60, 1];
 
 interface XmlNode {
   name: string;
@@ -28,12 +32,61 @@ function localName(name: string): string {
   return name.replace(/^.*:/, '').toLowerCase();
 }
 
+function codePoint(value: number): string {
+  if (!Number.isInteger(value) || value < 0 || value > 0x10ffff) {
+    return '';
+  }
+  return String.fromCodePoint(value);
+}
+
+export function decodeEntities(text: string): string {
+  return text.replace(ENTITY, (_token, decimal?: string, hex?: string, named?: string) => {
+    if (decimal) {
+      return codePoint(Number(decimal));
+    }
+    if (hex) {
+      return codePoint(parseInt(hex, 16));
+    }
+    return NAMED_ENTITIES[(named as string).toLowerCase()] as string;
+  });
+}
+
+function attrValue(match: RegExpMatchArray): string {
+  for (const group of [match[2], match[3], match[4]]) {
+    if (group !== undefined) {
+      return decodeEntities(group);
+    }
+  }
+  return '';
+}
+
 function parseAttrs(text: string): Record<string, string> {
   const attrs: Record<string, string> = {};
   for (const match of text.matchAll(ATTR)) {
-    attrs[localName(match[1] as string)] = match[2] ?? match[3] ?? match[4] ?? '';
+    attrs[localName(match[1] as string)] = attrValue(match);
   }
   return attrs;
+}
+
+function tagEnd(text: string, from: number): number {
+  let quote: string | null = null;
+  for (let index = from; index < text.length; index += 1) {
+    const char = text[index] as string;
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === '>' || text.startsWith('/>', index)) {
+      return index;
+    }
+  }
+  return text.length;
 }
 
 function skipDeclaration(source: string): string {
@@ -52,9 +105,7 @@ function parseNode(text: string, start: number): { node: XmlNode; next: number }
   }
   const name = localName(text.slice(nameStart, index));
   const attrStart = index;
-  while (index < text.length && text[index] !== '>' && text.slice(index, index + 2) !== '/>') {
-    index += 1;
-  }
+  index = tagEnd(text, index);
   const attrs = parseAttrs(text.slice(attrStart, index));
   if (text.slice(index, index + 2) === '/>') {
     return { node: { name, attrs, children: [], text: '' }, next: index + 2 };
@@ -71,7 +122,7 @@ function parseChildren(text: string, from: number, name: string, attrs: Record<s
   while (index < text.length) {
     if (text.slice(index, index + 2) === '</') {
       const close = text.indexOf('>', index);
-      return { node: { name, attrs, children, text: body.trim() }, next: close + 1 };
+      return { node: { name, attrs, children, text: decodeEntities(body.trim()) }, next: close + 1 };
     }
     if (text[index] === '<') {
       const parsed = parseNode(text, index);
@@ -120,11 +171,17 @@ function parseDuration(value: string | undefined): number {
   if (!value) {
     return 0;
   }
-  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i.exec(value);
+  const match = DURATION.exec(value.trim());
   if (!match) {
     return 0;
   }
-  return Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
+  return DURATION_UNITS.reduce((total, unit, index) => {
+    const part = match[index + 1];
+    if (!part) {
+      return total;
+    }
+    return total + Number(part) * unit;
+  }, 0);
 }
 
 function parseRange(value: string | undefined): StreamSegment['range'] {
@@ -180,15 +237,19 @@ function timelineSegments(template: XmlNode, base: string, media: string, values
   const segments: StreamSegment[] = [];
   let time = 0;
   let number = startNumber;
-  const periodTicks = periodSeconds * timescale;
+  const offset = Number(template.attrs.presentationtimeoffset) || 0;
+  const periodEnd = periodSeconds * timescale + offset;
   for (const item of kids(kid(template, 'segmenttimeline') as XmlNode, 's')) {
     if (item.attrs.t) {
       time = Number(item.attrs.t);
     }
     const duration = Number(item.attrs.d);
     const repeat = Number(item.attrs.r ?? 0);
-    const count = repeat < 0 ? Math.max(1, Math.floor((periodTicks - time) / duration)) : repeat + 1;
-    for (let offset = 0; offset < count && segments.length < MAX_SEGMENTS; offset += 1) {
+    if (!Number.isFinite(duration) || duration <= 0) {
+      continue;
+    }
+    const count = repeat < 0 ? Math.max(1, Math.ceil((periodEnd - time) / duration)) : repeat + 1;
+    for (let step = 0; step < count && segments.length < MAX_SEGMENTS; step += 1) {
       const segment = segmentUrl(base, media, { ...values, Number: number, Time: time });
       if (segment) {
         segments.push(segment);
@@ -242,12 +303,11 @@ function listSegments(list: XmlNode | undefined, base: string): { init: StreamSe
   return { init, segments };
 }
 
-function baseSegments(rep: XmlNode, base: string): { init: StreamSegment | null; segments: StreamSegment[] } {
+function baseSegments(segmentBase: XmlNode | undefined, base: string): { init: StreamSegment | null; segments: StreamSegment[] } {
   const url = safeHttpUrl(base);
   if (!url) {
     return { init: null, segments: [] };
   }
-  const segmentBase = kid(rep, 'segmentbase');
   const initialization = segmentBase ? kid(segmentBase, 'initialization') : undefined;
   const initRange = parseRange(initialization?.attrs.range);
   const indexRange = parseRange(segmentBase?.attrs.indexrange);
@@ -306,8 +366,10 @@ function representation(adapt: XmlNode, rep: XmlNode, base: string, periodSecond
   if (built.segments.length === 0) {
     built = listSegments(kid(rep, 'segmentlist') ?? kid(adapt, 'segmentlist'), href);
   }
-  if (built.segments.length === 0) {
-    built = baseSegments(rep, href);
+  const segmentBase = kid(rep, 'segmentbase') || kid(adapt, 'segmentbase');
+  const ownFile = textOf(rep, 'baseurl') || textOf(adapt, 'baseurl');
+  if (built.segments.length === 0 && !template && (segmentBase || ownFile)) {
+    built = baseSegments(segmentBase, href);
   }
   if (built.segments.length === 0) {
     return null;

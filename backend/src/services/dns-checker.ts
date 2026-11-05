@@ -28,7 +28,9 @@ interface Settled<T> {
 }
 
 const resolver = new Resolver({ timeout: 3000, tries: 2 });
-if (config.dnsServers.length > 0) resolver.setServers(config.dnsServers);
+if (config.dnsServers.length > 0) {
+  resolver.setServers(config.dnsServers);
+}
 
 const ERROR_CODES: Record<string, DnsError> = {
   ENOTFOUND: 'nxdomain',
@@ -61,9 +63,12 @@ async function queryControl(host: string): Promise<ControlDns | null> {
       headers: { accept: 'application/dns-json' },
       signal: AbortSignal.timeout(4000),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      return null;
+    }
     const body = (await response.json()) as { Status?: number; Answer?: Array<{ type: number; data: string }> };
-    const addresses = (body.Answer ?? []).filter((answer) => answer.type === 1).map((answer) => answer.data);
+    const answers = Array.isArray(body.Answer) ? body.Answer : [];
+    const addresses = answers.filter((answer) => answer.type === 1).map((answer) => answer.data);
     return { resolver: url.hostname, nxdomain: body.Status === 3, addresses };
   } catch {
     return null;

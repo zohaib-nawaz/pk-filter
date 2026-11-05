@@ -1,3 +1,4 @@
+import type { OverviewStats } from '../core/types';
 import { CHECK_FREQUENCIES, FILTER_MODES, MAX_STREAM_DOMAINS, parseStreamDomain } from '../core/settings';
 import { Button } from '../ui/components/Button';
 import { DomainListEditor } from '../ui/components/DomainListEditor';
@@ -12,19 +13,58 @@ import { useVideoDownloader } from '../ui/hooks/useVideoDownloader';
 const selectClass =
   'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900';
 
+function renderDownloaderError(error: string | null) {
+  if (!error) {
+    return null;
+  }
+  return <p className="text-xs text-red-600 dark:text-red-400">{error}</p>;
+}
+
+function dimmedUnless(enabled: boolean): string {
+  if (enabled) {
+    return '';
+  }
+  return 'pointer-events-none opacity-50';
+}
+
+function ispOptions(overview: OverviewStats | null, preferredIsp: string): Array<{ value: string; label: string }> {
+  const isps = new Set<string>();
+  if (overview) {
+    for (const network of overview.service.networks) {
+      if (network.isp && network.isp !== 'unknown') {
+        isps.add(network.isp);
+      }
+    }
+  }
+  if (preferredIsp) {
+    isps.add(preferredIsp);
+  }
+  return [{ value: '', label: 'All networks' }, ...[...isps].map((isp) => ({ value: isp, label: isp }))];
+}
+
 export function App() {
   const { settings, update } = useSettings();
   const { overview, busy, refresh, clearCache } = useOverview();
   const downloader = useVideoDownloader(settings, update);
 
-  if (!settings) return null;
+  if (!settings) {
+    return null;
+  }
+
+  const networkOptions = ispOptions(overview, settings.preferredIsp);
 
   const addStreamDomain = (input: string): string | null => {
     const domain = parseStreamDomain(input);
-    if (!domain) return 'Enter a website like example.com';
-    if (settings.streamDomains.includes(domain)) return 'This website is already in the list';
-    if (settings.streamDomains.length >= MAX_STREAM_DOMAINS) return `You can add up to ${MAX_STREAM_DOMAINS} websites`;
-    void update({ streamDomains: [...settings.streamDomains, domain] });
+    if (!domain) {
+      return 'Enter a website like example.com';
+    }
+    if (settings.streamDomains.includes(domain)) {
+      return 'This website is already in the list';
+    }
+    if (settings.streamDomains.length >= MAX_STREAM_DOMAINS) {
+      return `You can add up to ${MAX_STREAM_DOMAINS} websites`;
+    }
+    void update((current) => ({ streamDomains: [...current.streamDomains.filter((item) => item !== domain), domain] }));
     return null;
   };
 
@@ -33,17 +73,30 @@ export function App() {
       <header>
         <h1 className="text-xl font-semibold">PK Access Filter settings</h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Shows whether Google results open from Pakistani networks. Nothing is hidden unless you choose a filter.
+          Shows whether Google, Bing and DuckDuckGo results open from Pakistani networks. Nothing is hidden unless you choose a filter.
         </p>
       </header>
 
       <Section title="General">
-        <Switch checked={settings.enabled} label="Enable on Google Search" onChange={(enabled) => void update({ enabled })} />
+        <Switch checked={settings.enabled} label="Enable on search results" description="Google, Bing and DuckDuckGo" onChange={(enabled) => void update({ enabled })} />
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">Country</span>
           <select className={selectClass} value="PK" disabled>
             <option value="PK">Pakistan</option>
           </select>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">Measurement network</span>
+          <select className={selectClass} value={settings.preferredIsp} onChange={(event) => void update({ preferredIsp: event.target.value })}>
+            {networkOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+            Badges and filtering follow this network. "All networks" marks a site blocked only when every network blocks it.
+          </span>
         </label>
       </Section>
 
@@ -72,11 +125,11 @@ export function App() {
           description="Chrome will ask for download and site access. Downloads only start when you click."
           onChange={(enabled) => void downloader.setEnabled(enabled)}
         />
-        {downloader.error && <p className="text-xs text-red-600 dark:text-red-400">{downloader.error}</p>}
-        <div className={`flex flex-col gap-3 ${settings.videoDownloader ? '' : 'pointer-events-none opacity-50'}`}>
+        {renderDownloaderError(downloader.error)}
+        <div className={`flex flex-col gap-3 ${dimmedUnless(settings.videoDownloader)}`}>
           <Switch
             checked={settings.videoOnGoogle}
-            label="Icons on Google results"
+            label="Icons on search results"
             description="Marks direct video files and streaming-only videos in search results"
             onChange={(videoOnGoogle) => void update({ videoOnGoogle })}
           />
@@ -104,7 +157,7 @@ export function App() {
           disabled={!settings.videoDownloader}
           placeholder="example.com"
           onAdd={addStreamDomain}
-          onRemove={(domain) => void update({ streamDomains: settings.streamDomains.filter((item) => item !== domain) })}
+          onRemove={(domain) => void update((current) => ({ streamDomains: current.streamDomains.filter((item) => item !== domain) }))}
         />
       </Section>
 

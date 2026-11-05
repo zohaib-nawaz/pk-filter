@@ -1,6 +1,6 @@
 import { planFromDash, REST_OF_FILE } from '../core/dash';
 import { parseSidx } from '../core/fmp4';
-import { canCombine, estimateBytes, parsePlaylist, pickVariant, streamProblem, trackExtension, type HlsMedia, type HlsPlaylist, type StreamPlan, type StreamSegment, type StreamTrack } from '../core/hls';
+import { canCombine, estimateBytes, parsePlaylist, pickMuxedVariant, pickVariant, streamProblem, trackExtension, type HlsMaster, type HlsMedia, type HlsPlaylist, type HlsVariant, type StreamPlan, type StreamSegment, type StreamTrack } from '../core/hls';
 import { extensionFromPath, safeHttpUrl } from '../core/media';
 import type { MediaInfo } from '../core/types';
 
@@ -12,8 +12,12 @@ const cache = new Map<string, { plan: StreamPlan; expiresAt: number }>();
 
 async function fetchText(url: string): Promise<{ text: string; finalUrl: string }> {
   const response = await fetch(url, { credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS) });
-  if (!response.ok) throw new Error(`Stream playlist returned ${response.status}`);
-  if (Number(response.headers.get('content-length')) > MAX_PLAYLIST_BYTES) throw new Error('Stream playlist is too large');
+  if (!response.ok) {
+    throw new Error(`Stream playlist returned ${response.status}`);
+  }
+  if (Number(response.headers.get('content-length')) > MAX_PLAYLIST_BYTES) {
+    throw new Error('Stream playlist is too large');
+  }
   const text = await response.text();
   return { text: text.slice(0, MAX_PLAYLIST_BYTES), finalUrl: response.url || url };
 }
@@ -21,15 +25,21 @@ async function fetchText(url: string): Promise<{ text: string; finalUrl: string 
 async function fetchPlaylist(url: string): Promise<{ playlist: HlsPlaylist; finalUrl: string }> {
   const { text, finalUrl } = await fetchText(url);
   const playlist = parsePlaylist(text, finalUrl);
-  if (!playlist) throw new Error('This is not an HLS stream');
+  if (!playlist) {
+    throw new Error('This is not an HLS stream');
+  }
   return { playlist, finalUrl };
 }
 
 async function fetchMedia(url: string): Promise<HlsMedia> {
   const { playlist } = await fetchPlaylist(url);
-  if (playlist.kind !== 'media') throw new Error('Unexpected nested stream playlist');
+  if (playlist.kind !== 'media') {
+    throw new Error('Unexpected nested stream playlist');
+  }
   const problem = streamProblem(playlist);
-  if (problem) throw new Error(problem);
+  if (problem) {
+    throw new Error(problem);
+  }
   return playlist;
 }
 
@@ -41,7 +51,9 @@ async function fileSize(url: string): Promise<number | null> {
   const init: RequestInit = { credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS) };
   const head = await fetch(url, { ...init, method: 'HEAD' });
   const length = Number(head.headers.get('content-length'));
-  if (head.ok && length > 0) return length;
+  if (head.ok && length > 0) {
+    return length;
+  }
   const probe = await fetch(url, { ...init, headers: { range: 'bytes=0-0' } });
   await probe.body?.cancel().catch(() => undefined);
   const total = Number(/\/(\d+)$/.exec(probe.headers.get('content-range') ?? '')?.[1]);
@@ -55,12 +67,16 @@ async function fetchRange(url: string, range: { start: number; end: number }): P
     headers: { range: `bytes=${range.start}-${range.end}` },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  if (response.status !== 206) throw new Error(`Stream index returned ${response.status}`);
+  if (response.status !== 206) {
+    throw new Error(`Stream index returned ${response.status}`);
+  }
   return new Uint8Array(await response.arrayBuffer());
 }
 
 async function indexedFragments(segment: StreamSegment): Promise<StreamSegment[] | null> {
-  if (!segment.index) return null;
+  if (!segment.index) {
+    return null;
+  }
   try {
     const ranges = parseSidx(await fetchRange(segment.url, segment.index), segment.index.start);
     return ranges && ranges.length > 0 ? ranges.map((range) => ({ url: segment.url, range })) : null;
@@ -71,7 +87,9 @@ async function indexedFragments(segment: StreamSegment): Promise<StreamSegment[]
 
 async function chunkedFile(segment: StreamSegment & { range: { start: number; end: number } }): Promise<StreamSegment[]> {
   const size = await fileSize(segment.url);
-  if (!size) throw new Error('Could not read the size of this video file');
+  if (!size) {
+    throw new Error('Could not read the size of this video file');
+  }
   const out: StreamSegment[] = [];
   for (let start = segment.range.start; start < size; start += CHUNK_BYTES) {
     out.push({ url: segment.url, range: { start, end: Math.min(start + CHUNK_BYTES, size) - 1 } });
@@ -113,39 +131,55 @@ function isDash(url: string): boolean {
 
 export async function resolveStream(url: string): Promise<StreamPlan> {
   const cached = cache.get(url);
-  if (cached && cached.expiresAt > Date.now()) return cached.plan;
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.plan;
+  }
   const plan = isDash(url) ? await resolveDash(url) : await resolveHls(url);
   cache.set(url, { plan, expiresAt: Date.now() + CACHE_TTL_MS });
   return plan;
 }
 
-async function resolveHls(url: string): Promise<StreamPlan> {
-  const { playlist, finalUrl } = await fetchPlaylist(url);
-  let video: HlsMedia;
-  let audio: HlsMedia | null = null;
-  let bandwidth = 0;
-  let resolution: string | null = null;
-  if (playlist.kind === 'master') {
-    const variant = pickVariant(playlist);
-    if (!variant) throw new Error('This stream has no playable quality');
-    [video, audio] = await Promise.all([fetchMedia(variant.uri), variant.audioUri ? fetchMedia(variant.audioUri) : Promise.resolve(null)]);
-    bandwidth = variant.bandwidth;
-    resolution = variant.resolution;
-  } else {
-    const problem = streamProblem(playlist);
-    if (problem) throw new Error(problem);
-    video = playlist;
-  }
+function planFrom(manifestUrl: string, video: HlsMedia, audio: HlsMedia | null, variant: HlsVariant | null): StreamPlan {
   const tracks = audio ? [toTrack(video, 'video'), toTrack(audio, 'audio')] : [toTrack(video, 'video')];
-  const plan: StreamPlan = {
-    manifestUrl: finalUrl,
+  const bandwidth = variant ? variant.bandwidth : 0;
+  return {
+    manifestUrl,
     tracks,
     combine: canCombine(tracks),
     durationSeconds: video.durationSeconds,
     estimatedBytes: estimateBytes(bandwidth, video.durationSeconds),
-    resolution,
+    resolution: variant ? variant.resolution : null,
   };
-  return plan;
+}
+
+async function planVariant(manifestUrl: string, variant: HlsVariant): Promise<StreamPlan> {
+  const [video, audio] = await Promise.all([fetchMedia(variant.uri), variant.audioUri ? fetchMedia(variant.audioUri) : Promise.resolve(null)]);
+  return planFrom(manifestUrl, video, audio, variant);
+}
+
+async function planMaster(manifestUrl: string, master: HlsMaster): Promise<StreamPlan> {
+  const best = pickVariant(master);
+  if (!best) {
+    throw new Error('This stream has no playable quality');
+  }
+  const plan = await planVariant(manifestUrl, best);
+  const muxed = pickMuxedVariant(master);
+  if (plan.tracks.length < 2 || plan.combine || !muxed) {
+    return plan;
+  }
+  return planVariant(manifestUrl, muxed).catch(() => plan);
+}
+
+async function resolveHls(url: string): Promise<StreamPlan> {
+  const { playlist, finalUrl } = await fetchPlaylist(url);
+  if (playlist.kind === 'master') {
+    return planMaster(finalUrl, playlist);
+  }
+  const problem = streamProblem(playlist);
+  if (problem) {
+    throw new Error(problem);
+  }
+  return planFrom(finalUrl, playlist, null, null);
 }
 
 export async function inspectStream(url: string): Promise<MediaInfo> {

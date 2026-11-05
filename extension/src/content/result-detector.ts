@@ -1,24 +1,6 @@
-import { domainFromDisplayedUrl, domainFromHref, domainFromSiteName } from '../core/domain';
+import { googleEngine, type SearchEngine } from './search-engines';
 
 export const CLAIM_ATTRIBUTE = 'data-pkaf';
-
-const HEADINGS = '#search a h3, #botstuff a h3';
-const EXCLUDED = [
-  '#tads',
-  '#tadsb',
-  '#bottomads',
-  '#rhs',
-  '[data-text-ad]',
-  '.commercial-unit-desktop-top',
-  '.xpdopen',
-  '.related-question-pair',
-  'block-component',
-  'g-section-with-header',
-  'g-scrolling-carousel',
-  'g-accordion-expander',
-  '.kp-wholepage',
-].join(',');
-const SITE_NAME = '.VuuXrf';
 
 export interface SearchResult {
   container: HTMLElement;
@@ -29,29 +11,23 @@ export interface SearchResult {
   heading: HTMLElement;
 }
 
-function containerFor(anchor: HTMLAnchorElement): HTMLElement | null {
-  return anchor.closest<HTMLElement>('[data-hveid]') ?? anchor.closest<HTMLElement>('.MjjYud, .g');
-}
-
-function domainFor(anchor: HTMLAnchorElement, base: string): string | null {
-  return (
-    domainFromHref(anchor.getAttribute('href'), base) ??
-    domainFromDisplayedUrl(anchor.querySelector('cite')?.textContent ?? null) ??
-    domainFromSiteName(anchor.querySelector(SITE_NAME)?.textContent ?? null)
-  );
-}
-
-export function claimResults(root: ParentNode, base: string): SearchResult[] {
+export function claimResults(root: ParentNode, base: string, engine: SearchEngine = googleEngine): SearchResult[] {
   const results: SearchResult[] = [];
-  for (const heading of root.querySelectorAll<HTMLElement>(HEADINGS)) {
-    const anchor = heading.closest<HTMLAnchorElement>('a[href]');
-    if (!anchor || heading.closest(EXCLUDED)) continue;
-    const container = containerFor(anchor);
-    if (!container || container.closest(`[${CLAIM_ATTRIBUTE}]`)) continue;
-    const domain = domainFor(anchor, base);
-    if (!domain) continue;
+  for (const heading of root.querySelectorAll<HTMLElement>(engine.headings)) {
+    const anchor = engine.anchorOf(heading);
+    if (!anchor || heading.closest(engine.excluded)) {
+      continue;
+    }
+    const container = engine.containerOf(anchor);
+    if (!container || container.closest(`[${CLAIM_ATTRIBUTE}]`)) {
+      continue;
+    }
+    const domain = engine.domainOf(anchor, container, base);
+    if (!domain) {
+      continue;
+    }
     container.setAttribute(CLAIM_ATTRIBUTE, domain);
-    const cite = anchor.querySelector('cite');
+    const cite = engine.citeOf(anchor, container);
     results.push({
       container,
       anchor,
@@ -65,5 +41,7 @@ export function claimResults(root: ParentNode, base: string): SearchResult[] {
 }
 
 export function releaseAll(root: ParentNode): void {
-  for (const element of root.querySelectorAll(`[${CLAIM_ATTRIBUTE}]`)) element.removeAttribute(CLAIM_ATTRIBUTE);
+  for (const element of root.querySelectorAll(`[${CLAIM_ATTRIBUTE}]`)) {
+    element.removeAttribute(CLAIM_ATTRIBUTE);
+  }
 }

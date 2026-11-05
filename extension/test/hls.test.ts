@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { toStreamView } from '../src/core/downloads';
-import { estimateBytes, matchesStreamDomain, parsePlaylist, pickVariant, streamProblem, trackExtension, type HlsMaster, type HlsMedia } from '../src/core/hls';
+import { estimateBytes, matchesStreamDomain, parsePlaylist, pickMuxedVariant, pickVariant, streamProblem, trackExtension, type HlsMaster, type HlsMedia } from '../src/core/hls';
 import { runSegments, SegmentError, type SegmentChunk } from '../src/core/segment-pipeline';
 import { parseStreamDomain, sanitizeSettings } from '../src/core/settings';
 import { newStreamJob } from '../src/core/stream-jobs';
@@ -34,8 +34,11 @@ describe('parsePlaylist', () => {
     expect(parsed.variants[2]?.resolution).toBe('1280x720');
   });
 
-  it('prefers the best quality that has audio muxed in', () => {
-    expect(pickVariant(parsePlaylist(master, BASE) as HlsMaster)?.uri).toBe('https://cdn.example.com/show/mid/index.m3u8');
+  it('picks the best quality and keeps the best muxed one as a fallback', () => {
+    expect(pickVariant(parsePlaylist(master, BASE) as HlsMaster)?.uri).toBe('https://cdn.example.com/show/hd/index.m3u8');
+    expect(pickMuxedVariant(parsePlaylist(master, BASE) as HlsMaster)?.uri).toBe('https://cdn.example.com/show/mid/index.m3u8');
+    const withAudioOnly = parsePlaylist(`${master}\n#EXT-X-STREAM-INF:BANDWIDTH=9000000,CODECS="mp4a.40.2"\naudio-only.m3u8`, BASE) as HlsMaster;
+    expect(pickVariant(withAudioOnly)?.uri).toBe('https://cdn.example.com/show/hd/index.m3u8');
     const onlySeparate = parsePlaylist(master.replace(/#EXT-X-STREAM-INF:BANDWIDTH=(800000|2500000)[^\n]*\n[^\n]*\n?/g, ''), BASE) as HlsMaster;
     expect(pickVariant(onlySeparate)?.audioUri).toBe('https://cdn.example.com/show/audio/en.m3u8');
   });
@@ -48,6 +51,9 @@ describe('parsePlaylist', () => {
     expect(streamProblem(parsePlaylist(media('', ''), BASE) as HlsMedia)).toBe('Live streams cannot be downloaded');
     expect(streamProblem(parsePlaylist(media('#EXT-X-KEY:METHOD=AES-128,URI="key.bin"'), BASE) as HlsMedia)).toContain('encrypted');
     expect(streamProblem(parsePlaylist(media('#EXT-X-KEY:METHOD=NONE'), BASE) as HlsMedia)).toBeNull();
+    const switching = media('#EXT-X-MAP:URI="a.mp4"').replace('seg1.ts', '#EXT-X-MAP:URI="b.mp4"\nseg1.ts');
+    expect(streamProblem(parsePlaylist(switching, BASE) as HlsMedia)).toContain('changes format');
+    expect(streamProblem(parsePlaylist(media('#EXT-X-MAP:URI="a.mp4"').replace('seg1.ts', '#EXT-X-MAP:URI="a.mp4"\nseg1.ts'), BASE) as HlsMedia)).toBeNull();
     expect(parsePlaylist('<html>', BASE)).toBeNull();
   });
 
