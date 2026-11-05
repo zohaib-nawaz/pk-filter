@@ -1,12 +1,20 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { config } from '../config.js';
-import type { AccessibilityService } from '../services/accessibility-service.js';
+import type { CountryRouter } from '../services/country-router.js';
+import type { CountryResolver } from '../services/viewer-country.js';
 import { normalizeDomain } from '../utils/domain.js';
 
 interface CheckBody {
   domains: string[];
   country?: string;
 }
+
+interface AccessibilityOptions {
+  router: CountryRouter;
+  resolveCountry: CountryResolver;
+}
+
+const COUNTRY_PATTERN = '^(auto|[A-Za-z]{2})$';
 
 const checkSchema = {
   body: {
@@ -20,12 +28,22 @@ const checkSchema = {
         maxItems: config.maxDomainsPerRequest,
         items: { type: 'string', minLength: 1, maxLength: 253 },
       },
-      country: { type: 'string', enum: ['PK'] },
+      country: { type: 'string', pattern: COUNTRY_PATTERN },
     },
   },
 } as const;
 
-export const accessibilityRoutes: FastifyPluginAsync<{ service: AccessibilityService }> = async (app, { service }) => {
+const whereSchema = {
+  querystring: {
+    type: 'object',
+    properties: { country: { type: 'string', pattern: COUNTRY_PATTERN } },
+  },
+} as const;
+
+export const accessibilityRoutes: FastifyPluginAsync<AccessibilityOptions> = async (app, { router, resolveCountry }) => {
+  const viewerOf = (request: { ip: string; headers: Record<string, string | string[] | undefined> }, requested: string | undefined) =>
+    resolveCountry({ requested, ip: request.ip, headerCountry: request.headers['cf-ipcountry'] });
+
   app.post<{ Body: CheckBody }>('/check', { schema: checkSchema }, async (request) => {
     const accepted = new Set<string>();
     const rejected: string[] = [];
@@ -37,7 +55,13 @@ export const accessibilityRoutes: FastifyPluginAsync<{ service: AccessibilitySer
         rejected.push(input);
       }
     }
-    const results = await service.check([...accepted]);
-    return { results, rejected };
+    const viewer = viewerOf(request, request.body.country);
+    const results = await router.forCountry(viewer.country).check([...accepted]);
+    return { results, rejected, country: viewer.country, countrySource: viewer.source, measuredBy: router.measuredBy(viewer.country) };
+  });
+
+  app.get<{ Querystring: { country?: string } }>('/whereami', { schema: whereSchema }, async (request) => {
+    const viewer = viewerOf(request, request.query.country);
+    return { country: viewer.country, source: viewer.source, measuredBy: router.measuredBy(viewer.country) };
   });
 };

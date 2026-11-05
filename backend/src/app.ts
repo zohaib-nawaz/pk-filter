@@ -7,14 +7,21 @@ import { historyRoutes } from './routes/history.js';
 import { probeRoutes } from './routes/probe.js';
 import { statusRoutes } from './routes/status.js';
 import type { AccessibilityService } from './services/accessibility-service.js';
+import { createCountryRouter } from './services/country-router.js';
+import { noGeoIp, type GeoIp } from './services/geoip.js';
 import { createMultiNetworkService } from './services/multi-network-service.js';
+import type { OoniDirectory } from './services/ooni-service.js';
 import type { PeerClient } from './services/peer-client.js';
+import { createCountryResolver } from './services/viewer-country.js';
 import { sameToken } from './utils/token.js';
 
 export interface AppOptions {
   service: AccessibilityService;
   repository?: CheckRepository;
   peers?: PeerClient[];
+  countryPeers?: Record<string, PeerClient[]>;
+  ooni?: OoniDirectory;
+  geoip?: GeoIp;
   probeToken?: string;
   network: ProbeNetwork;
   ooniEnabled: boolean;
@@ -23,6 +30,8 @@ export interface AppOptions {
   trustProxy?: boolean;
   logger?: FastifyServerOptions['logger'];
 }
+
+const NO_OONI: OoniDirectory = { forCountry: () => ({ summary: async () => null }) };
 
 function peersOf(options: AppOptions): PeerClient[] {
   if (!options.peers) {
@@ -54,9 +63,22 @@ export async function buildApp(options: AppOptions) {
 
   app.get('/health', async () => ({ ok: true }));
   const peers = peersOf(options);
-  const combined = peers.length > 0 ? createMultiNetworkService(options.service, peers, (error) => app.log.warn({ err: error }, 'peer_failed')) : options.service;
-  await app.register(accessibilityRoutes, { prefix: '/api/v1', service: combined });
-  await app.register(historyRoutes, { prefix: '/api/v1', repository: options.repository ?? nullRepository });
+  const onPeerError = (error: unknown) => app.log.warn({ err: error }, 'peer_failed');
+  const combined = peers.length > 0 ? createMultiNetworkService(options.service, peers, onPeerError) : options.service;
+  const router = createCountryRouter({
+    localCountry: options.network.country,
+    local: combined,
+    countryPeers: options.countryPeers ?? {},
+    ooni: options.ooni ?? NO_OONI,
+    onError: onPeerError,
+  });
+  const resolveCountry = createCountryResolver({
+    geoip: options.geoip ?? noGeoIp,
+    fallback: options.network.country,
+    trustCountryHeader: options.trustProxy ?? false,
+  });
+  await app.register(accessibilityRoutes, { prefix: '/api/v1', router, resolveCountry });
+  await app.register(historyRoutes, { prefix: '/api/v1', repository: options.repository ?? nullRepository, country: options.network.country });
   if (probeToken) {
     await app.register(probeRoutes, { prefix: '/api/v1', service: options.service, token: probeToken });
   }
@@ -64,8 +86,14 @@ export async function buildApp(options: AppOptions) {
     prefix: '/api/v1',
     network: options.network,
     peers,
+    probeCountries: router.probeCountries(),
+    resolveCountry,
     ooniEnabled: options.ooniEnabled,
     persistence: options.persistence,
+  });
+
+  app.addHook('onClose', async () => {
+    await router.drain();
   });
 
   return app;

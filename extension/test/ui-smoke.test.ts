@@ -22,6 +22,8 @@ const local: Record<string, unknown> = {
   'night-queue': [{ id: 'n1', url: 'https://videos.example.com/a.m3u8', title: 'Lecture one', pageUrl: null, audioOnly: true, addedAt: now }],
 };
 
+let oldWorker = false;
+
 function answer(message: Message): unknown {
   if (message.type === 'site-status') {
     return { domain: message.domain, result: result(message.domain as string, 'blocked'), history: null };
@@ -29,11 +31,15 @@ function answer(message: Message): unknown {
   if (message.type === 'tab-videos') {
     return { videos: [{ url: 'https://videos.example.com/a.m3u8', title: 'Lecture one', extension: 'mp4', sizeBytes: 5_000_000, separateAudio: true }] };
   }
+  if (message.type === 'overview' && oldWorker) {
+    return { cachedDomains: 1, sync: { lastSync: null, lastError: null }, service: { online: true, country: 'PK', network: null, networks: [], ooni: true } };
+  }
   if (message.type === 'overview') {
     return {
       cachedDomains: 3,
       sync: { lastSync: now, lastError: null },
-      service: { online: true, country: 'PK', network: { isp: 'PTCL', asn: 'AS17557', city: 'Karachi' }, networks: [], ooni: true },
+      service: { online: true, country: 'PK', network: { isp: 'PTCL', asn: 'AS17557', city: 'Karachi' }, networks: [], ooni: true, probeCountries: ['PK'] },
+      viewer: { country: 'DE', source: 'ip', measuredBy: 'ooni' },
     };
   }
   if (message.type === 'schedule-download') {
@@ -87,6 +93,7 @@ afterEach(async () => {
     }
   });
   root = null;
+  oldWorker = false;
   vi.unstubAllGlobals();
   vi.resetModules();
 });
@@ -109,9 +116,17 @@ describe('extension pages render', () => {
     const { App } = await import('../src/options/App');
     const page = await render(App);
     await vi.waitFor(() => expect(page.textContent).toContain('Night downloads'));
-    for (const text of ['Explain sites that fail to load', 'Stream quality', 'Save subtitles', 'Starts at', 'Ends at']) {
+    for (const text of ['Explain sites that fail to load', 'Stream quality', 'Save subtitles', 'Starts at', 'Ends at', 'Automatic, from my IP address (now: Germany)', 'Also check from my own connection', 'Germany · OONI reports']) {
       expect(page.textContent).toContain(text);
     }
+  });
+
+  it('still renders settings when an older service worker answers', async () => {
+    oldWorker = true;
+    installChrome({});
+    const { App } = await import('../src/options/App');
+    const page = await render(App);
+    await vi.waitFor(() => expect(page.textContent).toContain('Test servers run in Pakistan'));
   });
 
   it('offers audio only and tonight in the popup and lists the night queue', async () => {

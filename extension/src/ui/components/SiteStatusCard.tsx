@@ -105,7 +105,7 @@ export function SiteStatusCard({ state }: SiteStatusCardProps) {
     return <div className={`${SHELL} h-16 animate-pulse bg-neutral-50 dark:bg-neutral-800`} />;
   }
   if (state.phase === 'unsupported') {
-    return <p className={`${SHELL} text-xs text-neutral-500 dark:text-neutral-400`}>Open a website to see if it works from Pakistan.</p>;
+    return <p className={`${SHELL} text-xs text-neutral-500 dark:text-neutral-400`}>Open a website to see if it is blocked where you are.</p>;
   }
   if (state.phase === 'unavailable') {
     return (

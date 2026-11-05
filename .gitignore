@@ -7,3 +7,4 @@ dist-firefox
 *.zip
 *.pem
 *.crx
+backend/data

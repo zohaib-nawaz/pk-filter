@@ -37,7 +37,7 @@ export function createHiddenNotice(onShowAll: () => void, anchorOf: () => Elemen
         host.remove();
         return;
       }
-      text.textContent = `${hiddenCount} result${hiddenCount === 1 ? '' : 's'} hidden by the Pakistan accessibility filter.`;
+      text.textContent = `${hiddenCount} result${hiddenCount === 1 ? '' : 's'} hidden by the accessibility filter.`;
       const anchor = anchorOf();
       if (!host.isConnected && anchor?.parentElement) {
         anchor.parentElement.insertBefore(host, anchor);

@@ -1,5 +1,6 @@
+import { countryName } from '../../core/countries';
 import { formatNetwork, formatRelative } from '../../core/format';
-import type { OverviewStats } from '../../core/types';
+import type { MeasuredBy, OverviewStats } from '../../core/types';
 import { StatRow } from './StatRow';
 import { StatusDot } from './StatusDot';
 
@@ -12,6 +13,19 @@ function serviceLabel(online: boolean | null): string {
     return 'Checking…';
   }
   return online ? 'Online' : 'Offline';
+}
+
+const MEASURED_BY: Record<MeasuredBy, string> = {
+  probe: 'test server',
+  peer: 'test server',
+  ooni: 'OONI reports',
+};
+
+function checkingFor(overview: OverviewStats | null): string {
+  if (!overview || !overview.viewer) {
+    return '-';
+  }
+  return `${countryName(overview.viewer.country)} · ${MEASURED_BY[overview.viewer.measuredBy]}`;
 }
 
 function networkSummary(overview: OverviewStats | null): { label: string; value: string } {
@@ -42,6 +56,7 @@ export function ServiceSummary({ overview }: ServiceSummaryProps) {
           </span>
         }
       />
+      <StatRow label="Checking for" value={checkingFor(overview)} />
       <StatRow label={networks.label} value={networks.value} />
       <StatRow label="OONI data" value={ooni} />
       <StatRow label="Cached domains" value={cached} />

@@ -1,3 +1,4 @@
+import { countryName } from './countries';
 import { normalizeDomain } from './domain';
 import { alternativesFor, needsAlternatives, type AlternativeLink } from './alternatives';
 import { formatNetwork, formatRelative } from './format';
@@ -24,6 +25,7 @@ export interface HistoryCell {
 
 export interface SiteCardView {
   domain: string;
+  country: string;
   statusKey: AccessStatus;
   status: StatusChip;
   checked: string;
@@ -67,16 +69,17 @@ export function siteCardView(site: SiteStatus, preferredIsp: string, now: number
   const networks = networksOf(site.result);
   return {
     domain: site.domain,
+    country: shown.country,
     statusKey: shown.status,
     status: { label: isSplitDecision(shown) ? 'Blocked on some ISPs' : meta.label, color: meta.color },
-    checked: `Checked ${formatRelative(shown.lastChecked, now).toLowerCase()} · ${formatNetwork(shown.network)}`,
+    checked: `Checked ${formatRelative(shown.lastChecked, now).toLowerCase()} · ${countryName(shown.country)} · ${formatNetwork(shown.network)}`,
     networks:
       networks.length > 1
         ? networks.map((network) => ({ isp: network.isp, label: STATUS_META[network.status].label, color: STATUS_META[network.status].color }))
         : [],
     history: historyCells(site, now),
     blockedSince: site.history?.blockedSince ?? null,
-    alternatives: needsAlternatives(shown.status) ? alternativesFor(site.domain) : [],
+    alternatives: needsAlternatives(shown.status) ? alternativesFor(site.domain, shown.country) : [],
   };
 }
 
@@ -95,16 +98,16 @@ export function siteDomainFromUrl(url: string | undefined): string | null {
   }
 }
 
-const VERDICTS: Record<AccessStatus, string> = {
-  blocked: 'This site appears to be blocked in Pakistan. The archived copy below may still open.',
-  possibly_blocked: 'This site may be blocked on some Pakistani networks. Try again later or open the archived copy.',
-  accessible: 'This site opens from Pakistan, so the problem is more likely the site itself or your connection.',
-  server_error: 'The site itself is returning errors, which is not a sign of blocking.',
-  unknown: 'There is not enough data yet to say whether this site is blocked.',
+const VERDICTS: Record<AccessStatus, (country: string) => string> = {
+  blocked: (country) => `This site appears to be blocked in ${country}. The archived copy below may still open.`,
+  possibly_blocked: (country) => `This site may be blocked on some networks in ${country}. Try again later or open the archived copy.`,
+  accessible: (country) => `This site opens from ${country}, so the problem is more likely the site itself or your connection.`,
+  server_error: () => 'The site itself is returning errors, which is not a sign of blocking.',
+  unknown: () => 'There is not enough data yet to say whether this site is blocked.',
 };
 
-export function verdictFor(status: AccessStatus): string {
-  return VERDICTS[status];
+export function verdictFor(status: AccessStatus, country: string): string {
+  return VERDICTS[status](countryName(country));
 }
 
 export function domainFromUrl(url: string | undefined): string | null {

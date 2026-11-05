@@ -1,6 +1,6 @@
 # PK Access Filter
 
-A Chrome extension that marks each Google Search result as **Accessible**, **Blocked**, **Possibly blocked**, **Unknown** or **Server error** from Pakistan, and can hide results with confirmed blocking evidence.
+A Chrome extension that marks each Google Search result as **Accessible**, **Blocked**, **Possibly blocked**, **Unknown** or **Server error** from Pakistan (or from whichever country you, or your VPN, are in), and can hide results with confirmed blocking evidence.
 
 It is an accessibility checker, not a VPN or proxy. Nothing is hidden unless the user picks a filter.
 
@@ -41,10 +41,20 @@ Cache durations: accessible 20 min, blocked / possibly blocked 15 min, server er
 - **Settings → Measurement network** lets users follow one ISP's result instead of the combined one.
 - **History** comes from `GET /api/v1/history?domain=…` (last 30 days, worst status per day, and `blockedSince` for the current blocking streak). It needs `DATABASE_URL`; without a database the popup simply hides the history strip.
 
+## Any country, VPN included
+
+- **Settings → Country** is **Automatic** by default. The backend works out the country from the request's IP address (a `CF-IPCountry` header when `TRUST_PROXY=true` behind Cloudflare, otherwise a local DB-IP country database), so turning on a VPN switches the country to the VPN's exit country. Users can also pick a country by hand.
+- **Pakistan** (the probe's own `PROBE_COUNTRY`) works exactly as before: live DNS/HTTP probe plus OONI.
+- **A country with its own test server**: add it to `PEER_PROBES` with a country prefix, for example `PEER_PROBES=https://jazz-probe.example.com,DE=https://de-probe.example.com`. Entries without a prefix are other ISPs in the main country. If that server is down, OONI reports are used.
+- **Any other country** uses OONI volunteer measurements from that country from the last 7 days, judged by share rather than by single reports: at least half confirmed blocked → Blocked; 70%+ problems (anomaly or confirmed) with 5+ measurements → Blocked if any are confirmed, else Possibly blocked; 20%+ problems → Possibly blocked; otherwise Accessible (a few blocked networks, such as schools or offices, are noted but do not flip the result); no recent data → Unknown, never a guessed "Accessible". These results carry the `ooni_only` evidence and lower confidence.
+- **Also check from my own connection** (Settings, on by default, can be turned off): the browser tries `https://site/` and `https://www.site/` itself (no cookies, 8 s timeout, 4 at a time, remembered for 10 minutes). If it opens, the result becomes Accessible; if it fails, it becomes Possibly blocked, or stays Blocked when the server already says so. Because this goes through the VPN when one is on, it answers "does it open for me right now". Each site sees that connection, like a visit.
+- The extension caches results per country and asks `GET /api/v1/whereami` at most once a minute. When the country changes (VPN on/off), open search pages re-check automatically. The popup shows "Country: Germany (from your IP)" and Settings shows which source is used.
+- Set up GeoIP once with `npm run geoip:update` in `backend/` (downloads [IP to Country Lite by DB-IP](https://db-ip.com), CC BY 4.0, about 8 MB, into `backend/data/`) and `GEOIP_DB=data/dbip-country-lite.mmdb`. Re-run it monthly; the server reloads the file on change. Without it, every request falls back to `PROBE_COUNTRY`. When the server can only see a local or unknown address (for example a backend on `localhost`, or a proxy without `TRUST_PROXY`), the extension reads the country from `https://www.cloudflare.com/cdn-cgi/trace` (`loc=`) in the browser instead, which also goes through the VPN.
+
 ## When a site does not open
 
-- **Right-click → "Does this link open in Pakistan?"** (or "Does this site open…" on a page) opens a small window with the same status card as the popup: per-ISP results, 30-day history and an archived copy for blocked sites. Needs only `contextMenus`, which shows no install warning.
-- **Settings → Explain sites that fail to load** (off by default) asks for the optional `webNavigation` permission. When a page fails with a blocking-like network error (connection reset/closed/refused/timed out, name not resolved, TLS failure; plus the Firefox equivalents), the tab switches to a page that says what went wrong, whether the site is blocked in Pakistan, and offers **Try again** and the archived copy. Errors such as `ERR_ABORTED`, blocked-by-client or "no internet" are left alone. Only the failing site's domain is checked. The page is shown once per site per tab, so Back and **Try again** show the browser's own error instead of looping, and incognito tabs are skipped.
+- **Right-click → "Check if this link is blocked"** (or "Check if this site is blocked" on a page) opens a small window with the same status card as the popup: per-ISP results, 30-day history and an archived copy for blocked sites. Needs only `contextMenus`, which shows no install warning.
+- **Settings → Explain sites that fail to load** (off by default) asks for the optional `webNavigation` permission. When a page fails with a blocking-like network error (connection reset/closed/refused/timed out, name not resolved, TLS failure; plus the Firefox equivalents), the tab switches to a page that says what went wrong, whether the site is blocked in the current country, and offers **Try again** and the archived copy. Errors such as `ERR_ABORTED`, blocked-by-client or "no internet" are left alone. Only the failing site's domain is checked. The page is shown once per site per tab, so Back and **Try again** show the browser's own error instead of looping, and incognito tabs are skipped.
 
 ## Video downloader (optional)
 
@@ -195,8 +205,10 @@ Backend tests cover domain/IP validation, SSRF guards, redirect rules, block-pag
 `POST /api/v1/check`
 
 ```json
-{ "domains": ["example.com", "example.org"], "country": "PK" }
+{ "domains": ["example.com", "example.org"], "country": "auto" }
 ```
+
+`country` is `auto` (or left out) to use the caller's IP, or a two-letter code. The response also has `country`, `countrySource` (`chosen`, `ip` or `default`) and `measuredBy` (`probe`, `peer` or `ooni`).
 
 ```json
 {
@@ -219,7 +231,7 @@ Backend tests cover domain/IP validation, SSRF guards, redirect rules, block-pag
 
 Max 20 domains per request. Invalid, private or reserved hosts come back in `rejected` and are never contacted.
 
-`GET /api/v1/status` returns probe network info. `GET /health` returns `{ "ok": true }`.
+`GET /api/v1/whereami?country=auto` returns `{ country, source, measuredBy }` for the caller. `GET /api/v1/status` returns probe network info, `probeCountries` and the caller's `viewer` country. `GET /api/v1/history?domain=…&country=PK` has data only for the probe country. `GET /health` returns `{ "ok": true }`.
 
 ## Security and privacy
 
@@ -229,10 +241,12 @@ Max 20 domains per request. Invalid, private or reserved hosts come back in `rej
 - Rate limiting per IP, 16 KB body limit, strict JSON schema.
 - No secrets in the extension. Required permissions: `storage`, `activeTab`, `contextMenus`, `alarms` and the API host, none of which show an install warning. Everything else (`downloads`, `notifications`, `scripting`, site access, `webNavigation`) is optional and requested only when the matching setting is turned on.
 - Badges, tooltip and notice are rendered with `textContent` inside closed Shadow DOM.
+- To find the country, the server uses the request's IP address and does not store it; only when it can't tell does the browser ask Cloudflare's trace page, at most once a minute.
 - Only domains are sent: search results, sites you check from the right-click menu and, if turned on, sites that fail to load. Never search queries, full URLs or browsing history. No accounts.
 
 ## Known limits
 
+- Countries without a test server depend on OONI coverage; little-measured sites show Unknown there unless the own-connection check is on.
 - One VPS = one ISP. Other Pakistani ISPs may block differently; OONI data per ASN partly covers this (see `docs/DEPLOYMENT.md` for adding more probes).
 - Google changes its markup often. Detection relies on `#search a h3`, `[data-hveid]` and the displayed URL; if badges stop appearing, update `extension/src/content/result-detector.ts`.
 - Block-page fingerprints live in `backend/src/services/blockpage.ts`; add new ones there.

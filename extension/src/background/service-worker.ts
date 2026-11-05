@@ -1,5 +1,6 @@
 import { normalizeDomain } from '../core/domain';
 import type { Request, ResponseMap } from '../core/messages';
+import { sanitizeSettings } from '../core/settings';
 import { removeDownloadRecord } from '../shared/download-store';
 import { clearCache, countCache, readSync, requestRefresh, writeSync } from '../shared/storage';
 import { getHistory, getServiceStatus } from './api-client';
@@ -12,6 +13,7 @@ import { rescheduleNightQueue, scheduleDownload, unscheduleDownload, watchNightQ
 import { getPageVideos, setPageVideos, watchTabs } from './page-videos';
 import { controlStreamJob, failInterruptedJobs, handleOffscreenEvent, watchStreamDownloads } from './stream-jobs';
 import { syncVideoSites } from './video-sites';
+import { currentViewer } from './viewer';
 
 const ADMIN_TYPES = ['overview', 'refresh', 'clear-cache', 'sync-video-sites'];
 const OFFSCREEN_EVENTS = ['stream-progress', 'stream-track-ready', 'stream-failed', 'stream-split'];
@@ -136,12 +138,10 @@ async function handle(request: Request, sender: chrome.runtime.MessageSender): P
       if (!domain) {
         return { domain: request.domain, result: null, history: null };
       }
-      const cached = (await lookupCached([domain]))[domain];
-      const [result, history] = await Promise.all([
-        cached ? Promise.resolve(cached) : checkDomains([domain]).then((results) => results[domain] ?? null),
-        getHistory(domain),
-      ]);
-      return { domain, result, history };
+      const { country } = await currentViewer();
+      const [results, history] = await Promise.all([checkDomains([domain]), getHistory(domain, country)]);
+      const result = results[domain];
+      return { domain, result: result ? result : null, history };
     }
     case 'inspect-media':
       return inspectAny(request.url, pageUrlFor(sender, undefined));
@@ -160,13 +160,13 @@ async function handle(request: Request, sender: chrome.runtime.MessageSender): P
     case 'sync-video-sites':
       return { ok: await syncVideoSites() };
     case 'overview': {
-      const [cachedDomains, sync, service] = await Promise.all([countCache(Date.now()), readSync(), getServiceStatus()]);
+      const [cachedDomains, sync, service, viewer] = await Promise.all([countCache(Date.now()), readSync(), getServiceStatus(), currentViewer()]);
       if (service.online && sync.lastError) {
         resetBackoff();
         await writeSync({ lastError: null });
-        return { cachedDomains, sync: { ...sync, lastError: null }, service };
+        return { cachedDomains, sync: { ...sync, lastError: null }, service, viewer };
       }
-      return { cachedDomains, sync, service };
+      return { cachedDomains, sync, service, viewer };
     }
     case 'refresh':
       await clearCache();
@@ -177,6 +177,12 @@ async function handle(request: Request, sender: chrome.runtime.MessageSender): P
       await clearCache();
       return { ok: true };
   }
+}
+
+function localCheckChanged(change: chrome.storage.StorageChange): boolean {
+  const before = sanitizeSettings(change.oldValue);
+  const after = sanitizeSettings(change.newValue);
+  return before.localCheck !== after.localCheck;
 }
 
 function syncDownloader(reinject = false): void {
@@ -209,6 +215,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync' && changes.settings) {
     syncDownloader();
     rescheduleNightQueue();
+    void currentViewer().catch(() => undefined);
+    if (localCheckChanged(changes.settings)) {
+      void requestRefresh();
+    }
   }
 });
 chrome.permissions.onAdded.addListener(() => watchFailedSites());

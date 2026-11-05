@@ -52,14 +52,18 @@ export async function requestRefresh(): Promise<void> {
   await chrome.storage.local.set({ [REFRESH_KEY]: Date.now() });
 }
 
-export async function readCache(domains: string[], now: number): Promise<Record<string, CheckResult>> {
+function cacheKey(country: string, domain: string): string {
+  return `${CACHE_PREFIX}${country}:${domain}`;
+}
+
+export async function readCache(country: string, domains: string[], now: number): Promise<Record<string, CheckResult>> {
   const results: Record<string, CheckResult> = {};
   if (domains.length === 0) {
     return results;
   }
-  const stored = await chrome.storage.local.get(domains.map((domain) => CACHE_PREFIX + domain));
+  const stored = await chrome.storage.local.get(domains.map((domain) => cacheKey(country, domain)));
   for (const domain of domains) {
-    const entry = stored[CACHE_PREFIX + domain] as CacheEntry | undefined;
+    const entry = stored[cacheKey(country, domain)] as CacheEntry | undefined;
     if (entry && entry.expiresAt > now) {
       results[domain] = entry.result;
     }
@@ -67,10 +71,10 @@ export async function readCache(domains: string[], now: number): Promise<Record<
   return results;
 }
 
-export async function writeCache(results: CheckResult[], settings: Settings, now: number): Promise<void> {
+export async function writeCache(country: string, results: CheckResult[], settings: Settings, now: number): Promise<void> {
   const entries: Record<string, CacheEntry> = {};
   for (const result of results) {
-    entries[CACHE_PREFIX + result.domain] = { result, expiresAt: expiresAt(result, settings, now) };
+    entries[cacheKey(country, result.domain)] = { result, expiresAt: expiresAt(result, settings, now) };
   }
   await chrome.storage.local.set(entries);
 }

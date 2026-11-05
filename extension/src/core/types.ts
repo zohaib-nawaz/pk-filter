@@ -4,6 +4,18 @@ export type DisplayStatus = AccessStatus | 'checking';
 
 export type FilterMode = 'all' | 'hide_blocked' | 'only_accessible';
 
+export type LocalProbe = 'reachable' | 'failed';
+
+export type CountrySource = 'chosen' | 'ip' | 'default';
+
+export type MeasuredBy = 'probe' | 'peer' | 'ooni';
+
+export interface ViewerCountry {
+  country: string;
+  source: CountrySource;
+  measuredBy: MeasuredBy;
+}
+
 export type StreamQuality = 'best' | '1080' | '720' | '480' | '360';
 
 export interface ProbeNetwork {
@@ -33,6 +45,7 @@ export interface CheckResult {
   network: ProbeNetwork;
   ttlSeconds: number;
   networks?: NetworkResult[];
+  localCheck?: LocalProbe;
 }
 
 export interface Settings {
@@ -51,6 +64,8 @@ export interface Settings {
   saveSubtitles: boolean;
   nightStartHour: number;
   nightEndHour: number;
+  country: string;
+  localCheck: boolean;
 }
 
 export interface SyncState {
@@ -68,6 +83,7 @@ export interface ServiceStatus {
   network: ProbeNetwork | null;
   networks: ServiceNetwork[];
   ooni: boolean;
+  probeCountries: string[];
 }
 
 export interface SiteHistory {
@@ -86,6 +102,7 @@ export interface OverviewStats {
   cachedDomains: number;
   sync: SyncState;
   service: ServiceStatus;
+  viewer: ViewerCountry | null;
 }
 
 export type MediaStatus = 'downloadable' | 'streaming' | 'protected' | 'unavailable' | 'unsupported';

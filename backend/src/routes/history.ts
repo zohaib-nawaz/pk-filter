@@ -9,15 +9,19 @@ const historySchema = {
   querystring: {
     type: 'object',
     required: ['domain'],
-    properties: { domain: { type: 'string', minLength: 1, maxLength: 253 } },
+    properties: { domain: { type: 'string', minLength: 1, maxLength: 253 }, country: { type: 'string', pattern: '^[A-Za-z]{2}$' } },
   },
 } as const;
 
-export const historyRoutes: FastifyPluginAsync<{ repository: CheckRepository }> = async (app, { repository }) => {
-  app.get<{ Querystring: { domain: string } }>('/history', { schema: historySchema }, async (request, reply) => {
+export const historyRoutes: FastifyPluginAsync<{ repository: CheckRepository; country: string }> = async (app, { repository, country }) => {
+  app.get<{ Querystring: { domain: string; country?: string } }>('/history', { schema: historySchema }, async (request, reply) => {
     const domain = normalizeDomain(request.query.domain);
     if (!domain) {
       return reply.code(400).send({ error: 'invalid_domain' });
+    }
+    const asked = request.query.country ? request.query.country.toUpperCase() : country;
+    if (asked !== country) {
+      return { domain, available: false, days: [], blockedSince: null };
     }
     const rows = await repository.history(domain, HISTORY_DAYS);
     if (rows === null) {

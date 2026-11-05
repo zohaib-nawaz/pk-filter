@@ -1,3 +1,4 @@
+import { AUTO_COUNTRY, isCountryCode } from './countries';
 import { normalizeDomain } from './domain';
 import type { FilterMode, Settings, StreamQuality } from './types';
 
@@ -17,6 +18,8 @@ export const DEFAULT_SETTINGS: Settings = {
   saveSubtitles: true,
   nightStartHour: 1,
   nightEndHour: 9,
+  country: AUTO_COUNTRY,
+  localCheck: true,
 };
 
 export const MAX_STREAM_DOMAINS = 50;
@@ -80,6 +83,13 @@ function hour(value: unknown, fallback: number): number {
   return fallback;
 }
 
+function countryChoice(value: unknown): string {
+  if (value === AUTO_COUNTRY || isCountryCode(value)) {
+    return value;
+  }
+  return DEFAULT_SETTINGS.country;
+}
+
 function nightWindow(raw: Partial<Record<keyof Settings, unknown>>): Pick<Settings, 'nightStartHour' | 'nightEndHour'> {
   const nightStartHour = hour(raw.nightStartHour, DEFAULT_SETTINGS.nightStartHour);
   const nightEndHour = hour(raw.nightEndHour, DEFAULT_SETTINGS.nightEndHour);
@@ -113,5 +123,7 @@ export function sanitizeSettings(input: unknown): Settings {
     streamQuality: QUALITIES.has(raw.streamQuality as StreamQuality) ? (raw.streamQuality as StreamQuality) : DEFAULT_SETTINGS.streamQuality,
     saveSubtitles: flag(raw.saveSubtitles, DEFAULT_SETTINGS.saveSubtitles),
     ...nightWindow(raw),
+    country: countryChoice(raw.country),
+    localCheck: flag(raw.localCheck, DEFAULT_SETTINGS.localCheck),
   };
 }

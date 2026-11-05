@@ -1,5 +1,5 @@
 import { TtlCache } from '../utils/ttl-cache.js';
-import { createLimiter } from '../utils/limiter.js';
+import { createLimiter, type Limiter } from '../utils/limiter.js';
 
 export interface OoniCounts {
   measurements: number;
@@ -42,6 +42,11 @@ interface OoniOptions {
   enabled: boolean;
   fetchFn?: typeof fetch;
   now?: () => number;
+  limit?: Limiter;
+}
+
+export interface OoniDirectory {
+  forCountry(country: string): OoniLookup;
 }
 
 const WINDOW_DAYS = 30;
@@ -112,7 +117,7 @@ export function createOoniService(options: OoniOptions): OoniLookup {
   const fetchFn = options.fetchFn ?? fetch;
   const now = options.now ?? Date.now;
   const cache = new TtlCache<string, OoniSummary | null>(5000, now);
-  const limit = createLimiter(4);
+  const limit = options.limit ?? createLimiter(4);
   let consecutiveFailures = 0;
   let pausedUntil = 0;
 
@@ -166,6 +171,30 @@ export function createOoniService(options: OoniOptions): OoniLookup {
         return cached;
       }
       return limit(() => load(domain));
+    },
+  };
+}
+
+const MAX_COUNTRIES = 64;
+
+export function createOoniDirectory(options: Omit<OoniOptions, 'country' | 'limit'>): OoniDirectory {
+  const limit = createLimiter(4);
+  const services = new Map<string, OoniLookup>();
+  return {
+    forCountry(country) {
+      const existing = services.get(country);
+      if (existing) {
+        return existing;
+      }
+      const created = createOoniService({ ...options, country, limit });
+      services.set(country, created);
+      if (services.size > MAX_COUNTRIES) {
+        const oldest = services.keys().next();
+        if (!oldest.done) {
+          services.delete(oldest.value);
+        }
+      }
+      return created;
     },
   };
 }

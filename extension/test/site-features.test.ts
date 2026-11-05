@@ -49,7 +49,7 @@ describe('site card', () => {
       now,
     );
     expect(view?.status.label).toBe('Blocked on some ISPs');
-    expect(view?.checked).toBe('Checked 2 hours ago · PTCL · AS-PTCL');
+    expect(view?.checked).toBe('Checked 2 hours ago · Pakistan · PTCL · AS-PTCL');
     expect(view?.networks.map((chip) => `${chip.isp}:${chip.label}`)).toEqual(['PTCL:Blocked', 'Jazz:Accessible']);
     expect(view?.history).toHaveLength(30);
     expect(view?.history?.at(-1)).toMatchObject({ day: '2026-11-05', title: '2026-11-05: Blocked' });
@@ -74,8 +74,8 @@ describe('site card', () => {
     expect(needsAlternatives('blocked')).toBe(true);
     expect(needsAlternatives('accessible')).toBe(false);
     expect(archiveUrl('example.pk')).toBe('https://web.archive.org/web/2/https://example.pk/');
-    expect(new URL(evidenceUrl('example.pk')).searchParams.get('domain')).toBe('example.pk');
-    expect(alternativesFor('example.pk')).toHaveLength(2);
+    expect(new URL(evidenceUrl('example.pk', 'DE')).searchParams.get('probe_cc')).toBe('DE');
+    expect(alternativesFor('example.pk', 'PK')).toHaveLength(2);
   });
 });
 

@@ -1,3 +1,4 @@
+import { AUTO_COUNTRY, countryName, countryOptions } from '../core/countries';
 import { HOUR_OPTIONS } from '../core/night';
 import { CHECK_FREQUENCIES, FILTER_MODES, MAX_STREAM_DOMAINS, parseStreamDomain, STREAM_QUALITIES } from '../core/settings';
 import type { OverviewStats } from '../core/types';
@@ -15,7 +16,17 @@ import { useOverview } from '../ui/hooks/useOverview';
 import { useSettings } from '../ui/hooks/useSettings';
 import { useVideoDownloader } from '../ui/hooks/useVideoDownloader';
 
-const COUNTRIES = [{ value: 'PK', label: 'Pakistan' }];
+function countryChoices(overview: OverviewStats | null): Array<{ value: string; label: string }> {
+  const detected = overview && overview.viewer && overview.viewer.source !== 'chosen' ? ` (now: ${countryName(overview.viewer.country)})` : '';
+  return [{ value: AUTO_COUNTRY, label: `Automatic, from my IP address${detected}` }, ...countryOptions()];
+}
+
+function testCountries(overview: OverviewStats | null): string {
+  if (!overview || overview.service.probeCountries.length === 0) {
+    return 'Pakistan';
+  }
+  return overview.service.probeCountries.map(countryName).join(', ');
+}
 
 function ispOptions(overview: OverviewStats | null, preferredIsp: string): Array<{ value: string; label: string }> {
   const isps = new Set<string>();
@@ -64,27 +75,39 @@ export function App() {
       <header>
         <h1 className="text-xl font-semibold">PK Access Filter settings</h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Shows whether Google, Bing and DuckDuckGo results open from Pakistani networks. Nothing is hidden unless you choose a filter.
+          Shows whether Google, Bing and DuckDuckGo results are blocked in your country, or the country your VPN connects through. Nothing is hidden unless you choose a filter.
         </p>
       </header>
 
       <Section title="General">
         <Switch checked={settings.enabled} label="Enable on search results" description="Google, Bing and DuckDuckGo" onChange={(enabled) => void update({ enabled })} />
-        <SelectField label="Country" value="PK" options={COUNTRIES} disabled onChange={() => undefined} />
+        <SelectField
+          label="Country"
+          hint="Automatic follows your IP address, so turning on a VPN switches to the VPN's country. Countries without a test server use OONI volunteer reports."
+          value={settings.country}
+          options={countryChoices(overview)}
+          onChange={(country) => void update({ country })}
+        />
+        <Switch
+          checked={settings.localCheck}
+          label="Also check from my own connection"
+          description="Tries to open each site from your browser (through your VPN if one is on) and uses that result, so badges match what you can really open. Each site sees the connection, like a visit."
+          onChange={(localCheck) => void update({ localCheck })}
+        />
         <SelectField
           label="Measurement network"
-          hint='Badges and filtering follow this network. "All networks" marks a site blocked only when every network blocks it.'
+          hint='Applies where a test server runs. Badges and filtering follow this network; "All networks" marks a site blocked only when every network blocks it.'
           value={settings.preferredIsp}
           options={networkOptions}
           onChange={(preferredIsp) => void update({ preferredIsp })}
         />
       </Section>
 
-      <Section title="When a site does not open" description="Right-click any link or page and choose “Does this open in Pakistan?” to check it at any time.">
+      <Section title="When a site does not open" description="Right-click any link or page and choose “Check if this link is blocked” to check it at any time.">
         <Switch
           checked={settings.explainFailures}
           label="Explain sites that fail to load"
-          description="Shows whether the site is blocked in Pakistan, with an archived copy. Chrome will ask to see page load errors; only the failing site's domain is checked."
+          description="Shows whether the site is blocked in your country, with an archived copy. Chrome will ask to see page load errors; only the failing site's domain is checked."
           onChange={(enabled) => void failureHelper.setEnabled(enabled)}
         />
         <ErrorText message={failureHelper.error} />
@@ -192,7 +215,10 @@ export function App() {
         <SelectField value={settings.minCacheMinutes} options={CHECK_FREQUENCIES} onChange={(minCacheMinutes) => void update({ minCacheMinutes })} />
       </Section>
 
-      <Section title="Measurements and cache" description="Measured by a server inside Pakistan and cross-checked with OONI.">
+      <Section
+        title="Measurements and cache"
+        description={`Test servers run in ${testCountries(overview)} and are cross-checked with OONI. Other countries use OONI volunteer reports.`}
+      >
         <ServiceSummary overview={overview} />
         <div className="flex gap-2">
           <Button variant="primary" disabled={busy} onClick={() => void refresh()}>
@@ -208,8 +234,8 @@ export function App() {
         <p className="text-sm text-neutral-600 dark:text-neutral-300">
           Only domain names are sent to the checking service: search results, sites you check from the right-click menu,
           and, if you turn it on, sites that fail to load. Search queries, full URLs and browsing history are never
-          collected, and no account is needed. Videos download straight from the website to
-          your computer through Chrome; nothing passes through our server.
+          collected, and no account is needed. The country is worked out on the server from your IP address and is not stored.
+          Videos download straight from the website to your computer through Chrome; nothing passes through our server.
         </p>
       </Section>
     </main>

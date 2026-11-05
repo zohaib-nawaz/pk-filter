@@ -165,6 +165,64 @@ export function classify(measurement: ProbeMeasurement, ooni: OoniSummary | null
   return { ...verdict, evidence };
 }
 
+interface OoniRates {
+  valid: number;
+  confirmedRate: number;
+  problemRate: number;
+}
+
+function ooniRates(ooni: OoniSummary | null): OoniRates {
+  if (!ooni) {
+    return { valid: 0, confirmedRate: 0, problemRate: 0 };
+  }
+  const { recent } = ooni;
+  const valid = Math.max(recent.measurements - recent.failures, 0);
+  if (valid === 0) {
+    return { valid, confirmedRate: 0, problemRate: 0 };
+  }
+  return { valid, confirmedRate: recent.confirmed / valid, problemRate: (recent.confirmed + recent.anomalies) / valid };
+}
+
+function sampleConfidence(valid: number, strong: number, weak: number): number {
+  if (valid >= STRONG_OONI_SAMPLE) {
+    return strong;
+  }
+  return weak;
+}
+
+function ooniOnlyVerdict(rates: OoniRates): Verdict {
+  const { valid, confirmedRate, problemRate } = rates;
+  if (valid === 0) {
+    return { status: 'unknown', confidence: 0.2 };
+  }
+  if (confirmedRate >= 0.5) {
+    return { status: 'blocked', confidence: sampleConfidence(valid, 0.9, 0.7) };
+  }
+  if (problemRate >= 0.7 && valid >= STRONG_OONI_SAMPLE) {
+    return confirmedRate > 0 ? { status: 'blocked', confidence: 0.75 } : { status: 'possibly_blocked', confidence: 0.6 };
+  }
+  if (problemRate >= 0.2) {
+    return { status: 'possibly_blocked', confidence: sampleConfidence(valid, 0.55, 0.4) };
+  }
+  return { status: 'accessible', confidence: sampleConfidence(valid, 0.75, 0.55) };
+}
+
+function ooniOnlyEvidence(ooni: OoniSummary | null, rates: OoniRates): Evidence[] {
+  if (!ooni || rates.valid === 0 || rates.problemRate >= 0.2) {
+    return ooniEvidence(ooni);
+  }
+  if (ooni.recent.confirmed > 0) {
+    return [{ type: 'ooni_blocked_on_few_networks', source: 'ooni', data: { ...rates } }];
+  }
+  return [{ type: 'ooni_recent_ok', source: 'ooni', data: { ...rates } }];
+}
+
+export function classifyFromOoni(ooni: OoniSummary | null): Classification {
+  const rates = ooniRates(ooni);
+  const evidence: Evidence[] = [{ type: 'ooni_only', source: 'ooni', data: {} }, ...ooniOnlyEvidence(ooni, rates)];
+  return { ...ooniOnlyVerdict(rates), evidence };
+}
+
 const TTL_SECONDS: Record<AccessStatus, number> = {
   accessible: 20 * 60,
   blocked: 15 * 60,

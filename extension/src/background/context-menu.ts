@@ -11,8 +11,8 @@ export function createContextMenus(): void {
     return;
   }
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: LINK_ITEM, title: 'Does this link open in Pakistan?', contexts: ['link'] });
-    chrome.contextMenus.create({ id: PAGE_ITEM, title: 'Does this site open in Pakistan?', contexts: ['page'] });
+    chrome.contextMenus.create({ id: LINK_ITEM, title: 'Check if this link is blocked', contexts: ['link'] });
+    chrome.contextMenus.create({ id: PAGE_ITEM, title: 'Check if this site is blocked', contexts: ['page'] });
   });
 }
 

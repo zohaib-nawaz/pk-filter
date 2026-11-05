@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { countActive } from '../core/downloads';
 import { FILTER_MODES } from '../core/settings';
-import type { PageVideo } from '../core/types';
+import { countryName } from '../core/countries';
+import type { OverviewStats, PageVideo } from '../core/types';
 import { Button } from '../ui/components/Button';
 import { DownloadList } from '../ui/components/DownloadList';
 import { OptionList } from '../ui/components/OptionList';
@@ -22,6 +23,17 @@ import { Header } from './components/Header';
 type Tab = 'filter' | 'downloads';
 
 const openSettings = () => void chrome.runtime.openOptionsPage();
+
+function viewerLabel(overview: OverviewStats | null): string {
+  if (!overview || !overview.viewer) {
+    return 'Detecting…';
+  }
+  const name = countryName(overview.viewer.country);
+  if (overview.viewer.source === 'ip') {
+    return `${name} (from your IP)`;
+  }
+  return name;
+}
 
 function downloadsLabel(videoCount: number, active: number): string {
   if (videoCount > 0) {
@@ -162,7 +174,7 @@ export function App() {
 
   return (
     <main className="flex w-80 flex-col gap-4 p-4">
-      <Header enabled={settings.enabled} onToggle={(enabled) => void update({ enabled })} />
+      <Header enabled={settings.enabled} country={viewerLabel(overview)} onToggle={(enabled) => void update({ enabled })} />
       <Tabs value={tab} options={tabs} onChange={chooseTab} />
       {renderTab()}
     </main>

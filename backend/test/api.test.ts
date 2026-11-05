@@ -53,7 +53,7 @@ describe('POST /api/v1/check', () => {
   it('validates the payload', async () => {
     const { app } = await setup();
     const tooMany = Array.from({ length: 21 }, (_, i) => `site${i}.com`);
-    for (const payload of [{}, { domains: [] }, { domains: tooMany }, { domains: ['a.com'], country: 'IN' }]) {
+    for (const payload of [{}, { domains: [] }, { domains: tooMany }, { domains: ['a.com'], country: 'PAK' }]) {
       const response = await app.inject({ method: 'POST', url: '/api/v1/check', payload });
       expect(response.statusCode, JSON.stringify(payload)).toBe(400);
     }
@@ -62,7 +62,9 @@ describe('POST /api/v1/check', () => {
   it('applies rate limiting', async () => {
     const { app } = await setup(2);
     const codes = [];
-    for (let i = 0; i < 3; i += 1) codes.push((await app.inject({ method: 'GET', url: '/api/v1/status' })).statusCode);
+    for (let i = 0; i < 3; i += 1) {
+      codes.push((await app.inject({ method: 'GET', url: '/api/v1/status' })).statusCode);
+    }
     expect(codes).toEqual([200, 200, 429]);
   });
 });

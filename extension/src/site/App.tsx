@@ -1,3 +1,4 @@
+import { countryName } from '../core/countries';
 import { describeFailure } from '../core/net-errors';
 import { parseSiteReport, type SiteReportParams } from '../core/site-report';
 import { verdictFor } from '../core/site-view';
@@ -8,11 +9,14 @@ import { useSiteStatus, type SiteCardState } from '../ui/hooks/useSiteStatus';
 
 const params = parseSiteReport(location.search);
 
-function heading(report: SiteReportParams): string {
+function heading(report: SiteReportParams, state: SiteCardState): string {
   if (report.mode === 'failed') {
     return `${report.domain} did not open`;
   }
-  return `Does ${report.domain} open in Pakistan?`;
+  if (state.phase === 'ready') {
+    return `Does ${report.domain} open in ${countryName(state.view.country)}?`;
+  }
+  return `Is ${report.domain} blocked?`;
 }
 
 function openTarget(report: SiteReportParams): string {
@@ -26,7 +30,7 @@ function renderVerdict(state: SiteCardState) {
   if (state.phase !== 'ready') {
     return null;
   }
-  return <p className="text-sm text-neutral-700 dark:text-neutral-200">{verdictFor(state.view.statusKey)}</p>;
+  return <p className="text-sm text-neutral-700 dark:text-neutral-200">{verdictFor(state.view.statusKey, state.view.country)}</p>;
 }
 
 function renderFailure(report: SiteReportParams) {
@@ -65,7 +69,7 @@ function Report({ report }: { report: SiteReportParams }) {
         <span className="text-sm font-semibold">PK Access Filter</span>
       </header>
       <section className="flex flex-col gap-1.5">
-        <h1 className="break-words text-lg font-semibold">{heading(report)}</h1>
+        <h1 className="break-words text-lg font-semibold">{heading(report, site.state)}</h1>
         {renderFailure(report)}
         {renderVerdict(site.state)}
       </section>

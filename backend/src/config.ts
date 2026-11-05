@@ -7,6 +7,19 @@ function listFrom(value: string | undefined): string[] {
   return (value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+export interface PeerProbe {
+  country: string | null;
+  url: string;
+}
+
+function peerFrom(entry: string): PeerProbe {
+  const match = /^([A-Za-z]{2})=(.+)$/.exec(entry);
+  if (!match) {
+    return { country: null, url: entry };
+  }
+  return { country: (match[1] as string).toUpperCase(), url: match[2] as string };
+}
+
 export const config = {
   port: numberFrom(process.env.PORT, 8787),
   host: process.env.HOST ?? '0.0.0.0',
@@ -26,7 +39,8 @@ export const config = {
   rateLimitPerMinute: numberFrom(process.env.RATE_LIMIT_PER_MINUTE, 60),
   retentionDays: numberFrom(process.env.RETENTION_DAYS, 30),
   databaseUrl: process.env.DATABASE_URL ?? '',
-  peerProbes: listFrom(process.env.PEER_PROBES),
+  peerProbes: listFrom(process.env.PEER_PROBES).map(peerFrom),
+  geoipDb: process.env.GEOIP_DB ?? '',
   probeToken: process.env.PROBE_TOKEN ?? '',
   maxDomainsPerRequest: 20,
 } as const;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { overviewFrom } from '../../core/overview';
 import type { OverviewStats } from '../../core/types';
 import { sendRequest } from '../../shared/messaging';
 
@@ -7,7 +8,7 @@ export function useOverview() {
   const [busy, setBusy] = useState(false);
 
   const reload = useCallback(async () => {
-    setOverview(await sendRequest({ type: 'overview' }));
+    setOverview(overviewFrom(await sendRequest({ type: 'overview' })));
   }, []);
 
   const run = useCallback(

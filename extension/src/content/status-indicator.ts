@@ -1,4 +1,5 @@
 import { archiveUrl, needsAlternatives } from '../core/alternatives';
+import { countryName } from '../core/countries';
 import { describeEvidence } from '../core/evidence';
 import { isSplitDecision, networksOf } from '../core/networks';
 import { formatConfidence, formatNetwork, formatRelative } from '../core/format';
@@ -58,13 +59,28 @@ function row(key: string, value: string): HTMLElement {
   return container;
 }
 
+function testLocation(result: CheckResult): string {
+  const country = countryName(result.country);
+  if (result.network.city && result.network.city !== 'unknown') {
+    return `${country} (${result.network.city})`;
+  }
+  return country;
+}
+
+function ariaPrefix(result: CheckResult | null): string {
+  if (!result) {
+    return 'Site accessibility';
+  }
+  return `Accessibility in ${countryName(result.country)}`;
+}
+
 function tooltipRows(status: DisplayStatus, result: CheckResult | null): HTMLElement[] {
   const meta = STATUS_META[status];
   const rows: HTMLElement[] = [element('div', 'title', meta.label), element('div', 'desc', meta.description)];
   if (!result) {
-    return [...rows, row('Test location', 'Pakistan')];
+    return rows;
   }
-  const location = result.network.city !== 'unknown' ? `Pakistan (${result.network.city})` : 'Pakistan';
+  const location = testLocation(result);
   rows.push(
     row('Last checked', formatRelative(result.lastChecked)),
     row('Test location', location),
@@ -72,6 +88,9 @@ function tooltipRows(status: DisplayStatus, result: CheckResult | null): HTMLEle
     row('Confidence', formatConfidence(result.confidence)),
     row('Network', formatNetwork(result.network)),
   );
+  if (result.localCheck) {
+    rows.push(row('Your connection', result.localCheck === 'reachable' ? 'Opens' : 'Did not open'));
+  }
   const networks = networksOf(result);
   if (networks.length > 1) {
     const list = element('div', 'networks');
@@ -177,7 +196,7 @@ export function createIndicator(): Indicator {
       dot.style.background = meta.color;
       label.textContent = text;
       host.toggleAttribute('data-clickable', Boolean(result) && needsAlternatives(status));
-      host.setAttribute('aria-label', `Pakistan accessibility: ${text}. ${meta.description}`);
+      host.setAttribute('aria-label', `${ariaPrefix(result)}: ${text}. ${meta.description}`);
     },
     remove: () => host.remove(),
   };
