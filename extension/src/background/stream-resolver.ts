@@ -1,7 +1,9 @@
+import { errorMessage } from '../core/errors';
 import { planFromDash, REST_OF_FILE } from '../core/dash';
 import { parseSidx } from '../core/fmp4';
-import { canCombine, estimateBytes, parsePlaylist, pickMuxedVariant, pickVariant, streamProblem, trackExtension, type HlsMaster, type HlsMedia, type HlsPlaylist, type HlsVariant, type StreamPlan, type StreamSegment, type StreamTrack } from '../core/hls';
+import { canCombine, estimateBytes, parsePlaylist, pickMuxedVariant, pickSubtitles, pickVariant, streamProblem, trackExtension, type HlsMaster, type HlsMedia, type HlsPlaylist, type HlsVariant, type StreamPlan, type StreamSegment, type StreamTrack } from '../core/hls';
 import { extensionFromPath, safeHttpUrl } from '../core/media';
+import { subtitleLanguage, type SubtitleTrack } from '../core/subtitles';
 import type { MediaInfo } from '../core/types';
 
 const TIMEOUT_MS = 10_000;
@@ -116,9 +118,9 @@ async function splitWholeFiles(segments: StreamSegment[]): Promise<{ segments: S
   return { segments: out, aligned };
 }
 
-async function resolveDash(url: string): Promise<StreamPlan> {
+async function resolveDash(url: string, maxHeight: number): Promise<StreamPlan> {
   const { text, finalUrl } = await fetchText(url);
-  const plan = planFromDash(text, finalUrl);
+  const plan = planFromDash(text, finalUrl, maxHeight);
   const split = await Promise.all(plan.tracks.map((track) => splitWholeFiles(track.segments)));
   const tracks = plan.tracks.map((track, index) => ({ ...track, segments: split[index]?.segments ?? track.segments }));
   return { ...plan, tracks, combine: plan.combine && split.every((item) => item.aligned) };
@@ -129,13 +131,14 @@ function isDash(url: string): boolean {
   return parsed !== null && extensionFromPath(parsed) === 'mpd';
 }
 
-export async function resolveStream(url: string): Promise<StreamPlan> {
-  const cached = cache.get(url);
+export async function resolveStream(url: string, maxHeight = Number.POSITIVE_INFINITY): Promise<StreamPlan> {
+  const key = `${maxHeight}|${url}`;
+  const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.plan;
   }
-  const plan = isDash(url) ? await resolveDash(url) : await resolveHls(url);
-  cache.set(url, { plan, expiresAt: Date.now() + CACHE_TTL_MS });
+  const plan = isDash(url) ? await resolveDash(url, maxHeight) : await resolveHls(url, maxHeight);
+  cache.set(key, { plan, expiresAt: Date.now() + CACHE_TTL_MS });
   return plan;
 }
 
@@ -157,23 +160,46 @@ async function planVariant(manifestUrl: string, variant: HlsVariant): Promise<St
   return planFrom(manifestUrl, video, audio, variant);
 }
 
-async function planMaster(manifestUrl: string, master: HlsMaster): Promise<StreamPlan> {
-  const best = pickVariant(master);
+async function hlsSubtitles(master: HlsMaster, variant: HlsVariant): Promise<SubtitleTrack | null> {
+  const option = pickSubtitles(master, variant);
+  if (!option) {
+    return null;
+  }
+  try {
+    const { playlist } = await fetchPlaylist(option.uri);
+    if (playlist.kind !== 'media' || playlist.segments.length === 0) {
+      return null;
+    }
+    return { language: subtitleLanguage(option.language), segments: playlist.segments.map((segment) => segment.url) };
+  } catch {
+    return null;
+  }
+}
+
+async function chooseVariantPlan(manifestUrl: string, master: HlsMaster, maxHeight: number): Promise<{ plan: StreamPlan; variant: HlsVariant }> {
+  const best = pickVariant(master, maxHeight);
   if (!best) {
     throw new Error('This stream has no playable quality');
   }
   const plan = await planVariant(manifestUrl, best);
-  const muxed = pickMuxedVariant(master);
+  const muxed = pickMuxedVariant(master, maxHeight);
   if (plan.tracks.length < 2 || plan.combine || !muxed) {
-    return plan;
+    return { plan, variant: best };
   }
-  return planVariant(manifestUrl, muxed).catch(() => plan);
+  return planVariant(manifestUrl, muxed)
+    .then((muxedPlan) => ({ plan: muxedPlan, variant: muxed }))
+    .catch(() => ({ plan, variant: best }));
 }
 
-async function resolveHls(url: string): Promise<StreamPlan> {
+async function planMaster(manifestUrl: string, master: HlsMaster, maxHeight: number): Promise<StreamPlan> {
+  const { plan, variant } = await chooseVariantPlan(manifestUrl, master, maxHeight);
+  return { ...plan, subtitles: await hlsSubtitles(master, variant) };
+}
+
+async function resolveHls(url: string, maxHeight: number): Promise<StreamPlan> {
   const { playlist, finalUrl } = await fetchPlaylist(url);
   if (playlist.kind === 'master') {
-    return planMaster(finalUrl, playlist);
+    return planMaster(finalUrl, playlist, maxHeight);
   }
   const problem = streamProblem(playlist);
   if (problem) {
@@ -182,9 +208,9 @@ async function resolveHls(url: string): Promise<StreamPlan> {
   return planFrom(finalUrl, playlist, null, null);
 }
 
-export async function inspectStream(url: string): Promise<MediaInfo> {
+export async function inspectStream(url: string, maxHeight = Number.POSITIVE_INFINITY): Promise<MediaInfo> {
   try {
-    const plan = await resolveStream(url);
+    const plan = await resolveStream(url, maxHeight);
     const extension = plan.tracks[0]?.extension ?? 'ts';
     const separate = plan.tracks.length > 1 && !plan.combine ? ' (video and audio save as two files)' : '';
     return {
@@ -193,6 +219,7 @@ export async function inspectStream(url: string): Promise<MediaInfo> {
       extension,
       mime: isDash(url) ? 'application/dash+xml' : 'application/vnd.apple.mpegurl',
       sizeBytes: plan.estimatedBytes,
+      separateAudio: plan.tracks.length > 1,
       reason: `${isDash(url) ? 'DASH' : 'HLS'} stream${plan.resolution ? ` ${plan.resolution}` : ''}${separate}`,
     };
   } catch (error) {
@@ -202,7 +229,7 @@ export async function inspectStream(url: string): Promise<MediaInfo> {
       extension: null,
       mime: null,
       sizeBytes: null,
-      reason: error instanceof Error ? error.message : 'Could not read this stream',
+      reason: errorMessage(error, 'Could not read this stream'),
     };
   }
 }

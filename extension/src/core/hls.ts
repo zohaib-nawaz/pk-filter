@@ -1,4 +1,5 @@
 import { extensionFromPath, safeHttpUrl } from './media';
+import type { SubtitleTrack } from './subtitles';
 
 export interface HlsVariant {
   uri: string;
@@ -6,11 +7,20 @@ export interface HlsVariant {
   resolution: string | null;
   audioUri: string | null;
   codecs: string;
+  subtitleGroup: string | null;
+}
+
+export interface HlsSubtitleOption {
+  group: string;
+  uri: string;
+  language: string;
+  isDefault: boolean;
 }
 
 export interface HlsMaster {
   kind: 'master';
   variants: HlsVariant[];
+  subtitles: HlsSubtitleOption[];
 }
 
 export interface StreamSegment {
@@ -47,6 +57,7 @@ export interface StreamPlan {
   durationSeconds: number;
   estimatedBytes: number | null;
   resolution: string | null;
+  subtitles?: SubtitleTrack | null;
 }
 
 const ATTRIBUTE = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/g;
@@ -86,6 +97,20 @@ function audioGroups(lines: string[], base: string): Map<string, string> {
   return groups;
 }
 
+function subtitleOptions(lines: string[], base: string): HlsSubtitleOption[] {
+  const options: HlsSubtitleOption[] = [];
+  for (const line of lines.filter((item) => item.startsWith('#EXT-X-MEDIA:'))) {
+    const media = attributes(line);
+    const uri = resolve(media.URI, base);
+    const group = media['GROUP-ID'];
+    if (media.TYPE !== 'SUBTITLES' || !uri || !group) {
+      continue;
+    }
+    options.push({ group, uri, language: media.LANGUAGE || media.NAME || '', isDefault: media.DEFAULT === 'YES' });
+  }
+  return options;
+}
+
 function parseMaster(lines: string[], base: string): HlsMaster {
   const groups = audioGroups(lines, base);
   const variants: HlsVariant[] = [];
@@ -104,9 +129,10 @@ function parseMaster(lines: string[], base: string): HlsMaster {
       resolution: info.RESOLUTION ?? null,
       audioUri: info.AUDIO ? (groups.get(info.AUDIO) ?? null) : null,
       codecs: info.CODECS ?? '',
+      subtitleGroup: info.SUBTITLES ?? null,
     });
   });
-  return { kind: 'master', variants };
+  return { kind: 'master', variants, subtitles: subtitleOptions(lines, base) };
 }
 
 function parseRange(value: string, previousEnd: number | undefined): StreamSegment['range'] {
@@ -169,22 +195,63 @@ function isAudioOnly(variant: HlsVariant): boolean {
   return variant.resolution === null && variant.codecs !== '' && !VIDEO_CODEC.test(variant.codecs);
 }
 
-function rankVariants(master: HlsMaster): HlsVariant[] {
+export function shortSide(width: number, height: number): number {
+  const sides = [width, height].filter((side) => Number.isFinite(side) && side > 0);
+  if (sides.length === 0) {
+    return 0;
+  }
+  return Math.min(...sides);
+}
+
+export function heightOf(resolution: string | null): number {
+  if (!resolution) {
+    return 0;
+  }
+  const [width, height] = resolution.split('x').map(Number);
+  return shortSide(width as number, height as number);
+}
+
+export function capByHeight<T>(items: T[], maxHeight: number, height: (item: T) => number): T[] {
+  if (!Number.isFinite(maxHeight)) {
+    return items;
+  }
+  const known = items.filter((item) => height(item) > 0);
+  if (known.length === 0) {
+    return items;
+  }
+  const fitting = known.filter((item) => height(item) <= maxHeight);
+  if (fitting.length > 0) {
+    return fitting;
+  }
+  const lowest = Math.min(...known.map(height));
+  return known.filter((item) => height(item) === lowest);
+}
+
+function rankVariants(master: HlsMaster, maxHeight: number): HlsVariant[] {
   const video = master.variants.filter((variant) => !isAudioOnly(variant));
-  const candidates = video.length > 0 ? video : master.variants;
+  const candidates = capByHeight(video.length > 0 ? video : master.variants, maxHeight, (variant) => heightOf(variant.resolution));
   return [...candidates].sort((a, b) => b.bandwidth - a.bandwidth || Number(a.audioUri !== null) - Number(b.audioUri !== null));
 }
 
-export function pickVariant(master: HlsMaster): HlsVariant | null {
-  const [best] = rankVariants(master);
+export function pickSubtitles(master: HlsMaster, variant: HlsVariant): HlsSubtitleOption | null {
+  const group = master.subtitles.filter((option) => !variant.subtitleGroup || option.group === variant.subtitleGroup);
+  const chosen = group.find((option) => option.isDefault) || group[0];
+  if (!chosen) {
+    return null;
+  }
+  return chosen;
+}
+
+export function pickVariant(master: HlsMaster, maxHeight = Number.POSITIVE_INFINITY): HlsVariant | null {
+  const [best] = rankVariants(master, maxHeight);
   if (!best) {
     return null;
   }
   return best;
 }
 
-export function pickMuxedVariant(master: HlsMaster): HlsVariant | null {
-  const muxed = rankVariants(master).find((variant) => variant.audioUri === null);
+export function pickMuxedVariant(master: HlsMaster, maxHeight = Number.POSITIVE_INFINITY): HlsVariant | null {
+  const muxed = rankVariants(master, maxHeight).find((variant) => variant.audioUri === null);
   if (!muxed) {
     return null;
   }
@@ -235,4 +302,12 @@ export function estimateBytes(bandwidth: number, durationSeconds: number): numbe
 export function matchesStreamDomain(hostname: string, domains: string[]): boolean {
   const host = hostname.toLowerCase().replace(/^www\./, '');
   return domains.some((domain) => host === domain || host.endsWith(`.${domain}`));
+}
+
+export function audioOnlyPlan(plan: StreamPlan): StreamPlan | null {
+  const audio = plan.tracks.find((track) => track.kind === 'audio');
+  if (!audio || plan.tracks.length < 2) {
+    return null;
+  }
+  return { ...plan, tracks: [audio], combine: false, resolution: null, estimatedBytes: null, subtitles: null };
 }

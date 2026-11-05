@@ -1,20 +1,13 @@
+import { errorMessage } from '../core/errors';
 import { describeInterrupt } from '../core/download-errors';
 import { buildFilename, titleFromUrl } from '../core/filename';
 import type { DownloadResult } from '../core/messages';
 import { addDownloadRecord, readDownloadRecords } from '../shared/download-store';
 import { inspectMedia } from './media-inspector';
+import { notify } from './notify';
 
 const starting = new Set<string>();
 let watching = false;
-
-function notify(id: number, title: string, message: string): void {
-  chrome.notifications?.create(`pkaf-download-${id}`, {
-    type: 'basic',
-    iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
-    title,
-    message,
-  });
-}
 
 async function handleChange(delta: chrome.downloads.DownloadDelta): Promise<void> {
   if (!delta.state?.current) {
@@ -25,12 +18,12 @@ async function handleChange(delta: chrome.downloads.DownloadDelta): Promise<void
     return;
   }
   if (delta.state.current === 'complete') {
-    notify(record.id, 'Download complete', record.title);
+    notify(`download-${record.id}`, 'Download complete', record.title);
   }
   if (delta.state.current === 'interrupted') {
     const [item] = await chrome.downloads.search({ id: delta.id });
     if (item?.error !== 'USER_CANCELED') {
-      notify(record.id, 'Download failed', `${record.title}: ${describeInterrupt(item?.error)}`);
+      notify(`download-${record.id}`, 'Download failed', `${record.title}: ${describeInterrupt(item?.error)}`);
     }
   }
 }
@@ -78,7 +71,7 @@ export async function startDownload(rawUrl: string, title: string): Promise<Down
     watchDownloads();
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Chrome could not start the download' };
+    return { ok: false, error: errorMessage(error, 'Chrome could not start the download') };
   } finally {
     starting.delete(info.url);
   }

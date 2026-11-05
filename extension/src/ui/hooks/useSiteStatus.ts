@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { normalizeDomain } from '../../core/domain';
-import { siteCardView, siteDomainFromUrl, type SiteCardView } from '../../core/site-view';
+import { domainFromUrl, siteCardView, type SiteCardView } from '../../core/site-view';
 import type { SiteStatus } from '../../core/types';
 import { sendRequest } from '../../shared/messaging';
 
@@ -12,24 +12,33 @@ export type SiteCardState =
 
 async function activeDomain(): Promise<string | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const host = siteDomainFromUrl(tab?.url);
-  return host ? normalizeDomain(host) : null;
+  if (!tab) {
+    return null;
+  }
+  return domainFromUrl(tab.url);
 }
 
-export function useSiteStatus(preferredIsp: string | undefined) {
+async function fixedOrActive(fixedDomain: string | undefined): Promise<string | null> {
+  if (fixedDomain === undefined) {
+    return activeDomain();
+  }
+  return normalizeDomain(fixedDomain);
+}
+
+export function useSiteStatus(preferredIsp: string | undefined, fixedDomain?: string) {
   const [site, setSite] = useState<SiteStatus | null>(null);
   const [phase, setPhase] = useState<'loading' | 'unsupported' | 'done'>('loading');
 
   const load = useCallback(async () => {
     setPhase('loading');
-    const domain = await activeDomain();
+    const domain = await fixedOrActive(fixedDomain);
     if (!domain) {
       setPhase('unsupported');
       return;
     }
     setSite((await sendRequest({ type: 'site-status', domain })) ?? { domain, result: null, history: null });
     setPhase('done');
-  }, []);
+  }, [fixedDomain]);
 
   useEffect(() => {
     void load();

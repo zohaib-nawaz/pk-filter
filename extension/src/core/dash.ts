@@ -1,4 +1,5 @@
-import { canCombine, estimateBytes, type StreamPlan, type StreamSegment, type StreamTrack } from './hls';
+import { canCombine, capByHeight, estimateBytes, shortSide, type StreamPlan, type StreamSegment, type StreamTrack } from './hls';
+import { subtitleLanguage, type SubtitleTrack } from './subtitles';
 import { safeHttpUrl } from './media';
 
 const MAX_SEGMENTS = 20_000;
@@ -378,8 +379,8 @@ function representation(adapt: XmlNode, rep: XmlNode, base: string, periodSecond
     id,
     kind,
     bandwidth,
-    width: Number(rep.attrs.width ?? 0),
-    height: Number(rep.attrs.height ?? 0),
+    width: Number(rep.attrs.width || adapt.attrs.width || 0),
+    height: Number(rep.attrs.height || adapt.attrs.height || 0),
     codecs: rep.attrs.codecs || '',
     mime,
     init: built.init,
@@ -387,8 +388,31 @@ function representation(adapt: XmlNode, rep: XmlNode, base: string, periodSecond
   };
 }
 
-function best(reps: DashRep[], kind: StreamTrack['kind']): DashRep | undefined {
-  return [...reps.filter((item) => item.kind === kind)].sort((a, b) => b.bandwidth - a.bandwidth)[0];
+function best(reps: DashRep[], kind: StreamTrack['kind'], maxHeight = Number.POSITIVE_INFINITY): DashRep | undefined {
+  const ofKind = reps.filter((item) => item.kind === kind);
+  const allowed = kind === 'video' ? capByHeight(ofKind, maxHeight, (item) => shortSide(item.width, item.height)) : ofKind;
+  return [...allowed].sort((a, b) => b.bandwidth - a.bandwidth)[0];
+}
+
+function isTextTrack(adapt: XmlNode): boolean {
+  const content = (adapt.attrs.contenttype || '').toLowerCase();
+  const mime = (adapt.attrs.mimetype || '').toLowerCase();
+  return content === 'text' || mime === 'text/vtt';
+}
+
+function dashSubtitles(period: XmlNode, base: string): SubtitleTrack | null {
+  for (const adapt of kids(period, 'adaptationset').filter(isTextTrack)) {
+    const mime = (adapt.attrs.mimetype || '').toLowerCase();
+    for (const rep of kids(adapt, 'representation')) {
+      const repMime = (rep.attrs.mimetype || mime).toLowerCase();
+      const file = textOf(rep, 'baseurl') || textOf(adapt, 'baseurl');
+      const url = file ? safeHttpUrl(file, base) : null;
+      if (url && (repMime === 'text/vtt' || url.pathname.toLowerCase().endsWith('.vtt'))) {
+        return { language: subtitleLanguage(adapt.attrs.lang || rep.attrs.lang), segments: [url.toString()] };
+      }
+    }
+  }
+  return null;
 }
 
 function toTrack(rep: DashRep): StreamTrack {
@@ -399,7 +423,7 @@ function muxedAudio(rep: DashRep): boolean {
   return /mp4a|opus|vorbis/i.test(rep.codecs);
 }
 
-export function planFromDash(xml: string, baseUrl: string): StreamPlan {
+export function planFromDash(xml: string, baseUrl: string, maxHeight = Number.POSITIVE_INFINITY): StreamPlan {
   const root = parseXml(xml);
   if (root.name !== 'mpd') {
     throw new Error('This is not a DASH stream');
@@ -424,7 +448,7 @@ export function planFromDash(xml: string, baseUrl: string): StreamPlan {
     const parsed = representation(adapt, rep, base, durationSeconds);
     return parsed ? [parsed] : [];
   }));
-  const video = best(reps, 'video') ?? best(reps, 'audio');
+  const video = best(reps, 'video', maxHeight) ?? best(reps, 'audio');
   if (!video) {
     throw new Error('This stream has no video segments');
   }
@@ -441,5 +465,6 @@ export function planFromDash(xml: string, baseUrl: string): StreamPlan {
     durationSeconds,
     estimatedBytes: estimateBytes(video.bandwidth + (audio?.bandwidth ?? 0), durationSeconds),
     resolution,
+    subtitles: dashSubtitles(period, base),
   };
 }

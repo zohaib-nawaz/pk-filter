@@ -2,6 +2,7 @@ import { expiresAt } from '../core/cache-policy';
 import { createLimiter } from '../core/limiter';
 import { sanitizeSettings } from '../core/settings';
 import type { CheckResult, Settings, SyncState } from '../core/types';
+import { onKeyChanged } from './storage-keys';
 
 const SETTINGS_KEY = 'settings';
 const SYNC_KEY = 'sync';
@@ -44,13 +45,7 @@ export function onSettingsChanged(listener: (settings: Settings) => void): () =>
 }
 
 export function onRefreshRequested(listener: () => void): () => void {
-  const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'local' && changes[REFRESH_KEY]) {
-      listener();
-    }
-  };
-  chrome.storage.onChanged.addListener(handler);
-  return () => chrome.storage.onChanged.removeListener(handler);
+  return onKeyChanged('local', REFRESH_KEY, listener);
 }
 
 export async function requestRefresh(): Promise<void> {

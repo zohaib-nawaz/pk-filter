@@ -41,6 +41,11 @@ Cache durations: accessible 20 min, blocked / possibly blocked 15 min, server er
 - **Settings → Measurement network** lets users follow one ISP's result instead of the combined one.
 - **History** comes from `GET /api/v1/history?domain=…` (last 30 days, worst status per day, and `blockedSince` for the current blocking streak). It needs `DATABASE_URL`; without a database the popup simply hides the history strip.
 
+## When a site does not open
+
+- **Right-click → "Does this link open in Pakistan?"** (or "Does this site open…" on a page) opens a small window with the same status card as the popup: per-ISP results, 30-day history and an archived copy for blocked sites. Needs only `contextMenus`, which shows no install warning.
+- **Settings → Explain sites that fail to load** (off by default) asks for the optional `webNavigation` permission. When a page fails with a blocking-like network error (connection reset/closed/refused/timed out, name not resolved, TLS failure; plus the Firefox equivalents), the tab switches to a page that says what went wrong, whether the site is blocked in Pakistan, and offers **Try again** and the archived copy. Errors such as `ERR_ABORTED`, blocked-by-client or "no internet" are left alone. Only the failing site's domain is checked. The page is shown once per site per tab, so Back and **Try again** show the browser's own error instead of looping, and incognito tabs are skipped.
+
 ## Video downloader (optional)
 
 Off by default. Turn it on in **Settings → Video downloader**; Chrome then asks for `downloads`, `notifications`, `scripting` and site access. Turning it off removes those permissions again.
@@ -70,6 +75,14 @@ Settings → **Stream downloads (HLS / DASH)** takes a list of websites typed in
 2. The background checks the tab's real URL against the list (a page can't claim to be allowlisted), reads the playlist, picks the best quality that has audio built in, and refuses encrypted (`#EXT-X-KEY` other than `NONE`), DRM and live streams. Byte-range playlists (`#EXT-X-BYTERANGE`, one big file split by ranges) are fetched with HTTP `Range` requests.
 3. An offscreen document downloads the segments, 4 at a time with 3 retries each, in order, straight into the browser's private file storage (OPFS), so large videos never sit in memory. The finished file is handed to `chrome.downloads`, then the temporary copy is deleted.
 4. TS streams save as `.ts`, fragmented MP4 as `.mp4`. When the best quality keeps audio in a separate fragmented-MP4 track, a small built-in muxer joins them into one `.mp4` (audio gets its own track id, segments are interleaved). Only separate-audio TS streams, which would need ffmpeg, still save video and audio as two files.
+
+Extra stream options:
+
+- **Stream quality** (Settings): best available, or up to 1080p / 720p / 480p / 360p. The highest quality at or below the limit is used; if nothing fits, the smallest one.
+- **Audio only** (popup → Videos on this page): saves just the separate audio track as `.m4a` (or `.aac`). Shown only when the stream has a separate audio track; audio mixed into the video can't be pulled out without ffmpeg.
+- **Save subtitles** (Settings, on by default): HLS `#EXT-X-MEDIA:TYPE=SUBTITLES` (the default language of the chosen quality) and DASH `text/vtt` tracks are saved as `Title.<language>.vtt` next to the video. Segmented WebVTT is joined into one file.
+- Signed stream links often expire after a few hours, so a queued stream can fail at night with a 403. Failed items stay in the Tonight list with the reason and can be removed.
+- **Tonight** (popup): queues a video for the night window set in Settings (default 1:00 AM to 9:00 AM, for cheaper night internet packages). A `chrome.alarms` alarm starts the queue at the window start; if the browser was closed then, the queue starts the next time the extension wakes up inside the window, otherwise it waits for the next night. The browser has to be open. Queued items show in the popup's Downloads tab and can be cancelled.
 
 DASH manifests are read by a small built-in XML parser (service workers have no `DOMParser`). Supported: `SegmentTemplate` with `$Number$` (including `%05d` padding), `$Time$` and `SegmentTimeline`, `SegmentList` with byte ranges, and single-file `SegmentBase` representations, which are split into 8 MB range requests after a size check so the file is never held in memory or downloaded twice. Live (`type="dynamic"`), `ContentProtection` (encrypted/DRM) and multi-period manifests are refused. MP4 video plus separate MP4 audio is joined into one file like HLS; WebM tracks save as separate files.
 
@@ -160,6 +173,11 @@ Running locally is fine for development, but checks then reflect **your** networ
 3. Click **Load unpacked** and select `extension/dist`.
 4. Search on google.com or google.com.pk.
 
+### Edge and Firefox
+
+- **Edge:** the Chrome build works as is. Load `extension/dist` from `edge://extensions` (Developer mode → Load unpacked), or upload `pk-access-filter.zip` from `npm run package` to Edge Add-ons.
+- **Firefox (128+):** `npm run build:firefox` writes `extension/dist-firefox/`, and `npm run package:firefox` zips it. Load it from `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → pick `dist-firefox/manifest.json`. Firefox uses an event page instead of a service worker and has no offscreen documents, so HLS/DASH stream downloads say they are not supported there; badges, the popup, right-click checks, failed-site pages, direct file downloads and night downloads work. In Firefox, also allow the API host in the add-on's permissions if it asks.
+
 ### Tests
 
 ```bash
@@ -209,9 +227,9 @@ Max 20 domains per request. Invalid, private or reserved hosts come back in `rej
 - All resolved IPs are checked against private, loopback, link-local, CGNAT, multicast and reserved ranges (IPv4 + IPv6, including IPv4-mapped). The connection is pinned to the validated IP, so DNS rebinding can't redirect it.
 - Every redirect is re-validated (http/https only, ports 80/443, public hosts). Max 5 redirects, 64 KB body cap, per-request timeouts.
 - Rate limiting per IP, 16 KB body limit, strict JSON schema.
-- No secrets in the extension. Permissions: `storage` plus the API host only.
+- No secrets in the extension. Required permissions: `storage`, `activeTab`, `contextMenus`, `alarms` and the API host, none of which show an install warning. Everything else (`downloads`, `notifications`, `scripting`, site access, `webNavigation`) is optional and requested only when the matching setting is turned on.
 - Badges, tooltip and notice are rendered with `textContent` inside closed Shadow DOM.
-- Only result domains are sent, never search queries, full URLs or browsing history. No accounts.
+- Only domains are sent: search results, sites you check from the right-click menu and, if turned on, sites that fail to load. Never search queries, full URLs or browsing history. No accounts.
 
 ## Known limits
 

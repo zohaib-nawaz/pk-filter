@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:firefox": "TARGET=firefox node scripts/build.mjs",
     "package": "node scripts/build.mjs && cd dist && zip -qr ../pk-access-filter.zip .",
+    "package:firefox": "TARGET=firefox node scripts/build.mjs && cd dist-firefox && zip -qr ../pk-access-filter-firefox.zip .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

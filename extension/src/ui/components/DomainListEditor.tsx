@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react';
+import { dimmedWhen } from '../classes';
+import { ErrorText } from './ErrorText';
 
 interface DomainListEditorProps {
   domains: string[];
@@ -6,20 +8,6 @@ interface DomainListEditorProps {
   placeholder: string;
   onAdd: (input: string) => string | null;
   onRemove: (domain: string) => void;
-}
-
-function renderError(error: string | null) {
-  if (!error) {
-    return null;
-  }
-  return <p className="text-xs text-red-600 dark:text-red-400">{error}</p>;
-}
-
-function dimmed(disabled: boolean | undefined): string {
-  if (disabled) {
-    return 'pointer-events-none opacity-50';
-  }
-  return '';
 }
 
 export function DomainListEditor({ domains, disabled, placeholder, onAdd, onRemove }: DomainListEditorProps) {
@@ -62,7 +50,7 @@ export function DomainListEditor({ domains, disabled, placeholder, onAdd, onRemo
   };
 
   return (
-    <div className={`flex flex-col gap-2 ${dimmed(disabled)}`}>
+    <div className={`flex flex-col gap-2 ${dimmedWhen(disabled)}`}>
       <form onSubmit={submit} className="flex gap-2">
         <input
           value={value}
@@ -74,7 +62,7 @@ export function DomainListEditor({ domains, disabled, placeholder, onAdd, onRemo
           Add
         </button>
       </form>
-      {renderError(error)}
+      <ErrorText message={error} />
       {renderDomains()}
     </div>
   );

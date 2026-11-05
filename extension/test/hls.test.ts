@@ -150,7 +150,9 @@ describe('runSegments', () => {
       items: ['x'],
       fetchSegment: async () => {
         calls += 1;
-        if (calls < 3) throw new Error('network');
+        if (calls < 3) {
+          throw new Error('network');
+        }
         return chunk('ok');
       },
       write: async () => undefined,

@@ -9,7 +9,9 @@ function installChrome(messages: Message[], extra: Record<string, unknown> = {})
       id: 'test-extension',
       sendMessage: async (message: Message) => {
         messages.push(message);
-        if (message.type !== 'inspect-media') return { ok: true };
+        if (message.type !== 'inspect-media') {
+          return { ok: true };
+        }
         const path = message.url ? new URL(message.url).pathname : '';
         if (path.endsWith('.m3u8') || path.endsWith('.mpd')) {
           return { status: 'downloadable', url: message.url, extension: 'ts', mime: 'application/vnd.apple.mpegurl', sizeBytes: 5000, reason: 'HLS stream' };
@@ -153,7 +155,7 @@ describe('video page detection', () => {
     await import('../src/content/video-page');
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(messages.filter((m) => m.type === 'inspect-media')).toEqual([]);
-    expect(messages.filter((m) => m.type === 'page-videos').flatMap((m) => m.videos ?? [])).toEqual([]);
+    expect(messages.filter((m) => m.type === 'page-videos' && m.videos && m.videos.length > 0)).toEqual([]);
     retire();
     vi.restoreAllMocks();
   });

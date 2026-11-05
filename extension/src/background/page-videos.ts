@@ -1,12 +1,10 @@
 import type { PageVideo } from '../core/types';
+import { pageVideosKey, readList } from '../shared/storage-keys';
 
-const KEY_PREFIX = 'page-videos:';
 const BADGE_COLOR = '#188038';
 let watching = false;
 
-function key(tabId: number): string {
-  return `${KEY_PREFIX}${tabId}`;
-}
+const key = pageVideosKey;
 
 export async function setPageVideos(tabId: number, videos: PageVideo[]): Promise<void> {
   if (videos.length > 0) {
@@ -18,13 +16,8 @@ export async function setPageVideos(tabId: number, videos: PageVideo[]): Promise
   await chrome.action.setBadgeText({ tabId, text: videos.length > 0 ? String(videos.length) : '' }).catch(() => undefined);
 }
 
-export async function getPageVideos(tabId: number): Promise<PageVideo[]> {
-  const stored = await chrome.storage.session.get(key(tabId));
-  const videos = stored[key(tabId)];
-  if (!Array.isArray(videos)) {
-    return [];
-  }
-  return videos as PageVideo[];
+export function getPageVideos(tabId: number): Promise<PageVideo[]> {
+  return readList<PageVideo>('session', key(tabId));
 }
 
 export function watchTabs(): void {

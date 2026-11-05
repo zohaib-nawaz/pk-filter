@@ -1,9 +1,14 @@
+import { errorMessage } from '../core/errors';
 import { buildFilename } from '../core/filename';
+import { audioOnlyPlan, type StreamPlan } from '../core/hls';
 import type { DownloadResult } from '../core/messages';
-import { ACTIVE_STREAM_STATES, newStreamJob, type OffscreenCommand, type OffscreenEvent, type StreamControl, type StreamJob } from '../core/stream-jobs';
+import { ACTIVE_STREAM_STATES, newStreamJob, type OffscreenCommand, type OffscreenEvent, type StreamControl, type StreamJob, type StreamJobOptions } from '../core/stream-jobs';
+import { readStreamJobs, STREAM_JOBS_KEY } from '../shared/stream-job-store';
+import { notify } from './notify';
 import { resolveStream } from './stream-resolver';
+import { streamJobOptions } from './stream-options';
+import { saveSubtitles } from './subtitle-saver';
 
-const JOBS_KEY = 'stream-jobs';
 const MAX_JOBS = 50;
 const OFFSCREEN_PATH = 'offscreen.html';
 const SINGLE_OFFSCREEN = 'single offscreen document';
@@ -17,24 +22,8 @@ function serial<T>(task: () => Promise<T>): Promise<T> {
   return next;
 }
 
-function errorText(error: unknown, fallback: string): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return fallback;
-}
-
-export async function readStreamJobs(): Promise<StreamJob[]> {
-  const stored = await chrome.storage.local.get(JOBS_KEY);
-  const jobs = stored[JOBS_KEY];
-  if (!Array.isArray(jobs)) {
-    return [];
-  }
-  return jobs as StreamJob[];
-}
-
 async function writeJobs(jobs: StreamJob[]): Promise<void> {
-  await chrome.storage.local.set({ [JOBS_KEY]: jobs.slice(0, MAX_JOBS) });
+  await chrome.storage.local.set({ [STREAM_JOBS_KEY]: jobs.slice(0, MAX_JOBS) });
 }
 
 function updateJob(id: string, patch: (job: StreamJob) => Partial<StreamJob> | null): Promise<StreamJob | null> {
@@ -64,6 +53,9 @@ function whileActive(changes: Partial<StreamJob>): (job: StreamJob) => Partial<S
 }
 
 async function hasOffscreen(): Promise<boolean> {
+  if (!streamsSupported()) {
+    return false;
+  }
   const url = chrome.runtime.getURL(OFFSCREEN_PATH);
   const contexts = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT], documentUrls: [url] });
   return contexts.length > 0;
@@ -77,7 +69,7 @@ async function createOffscreen(): Promise<void> {
       justification: 'Assemble downloaded stream segments into a single file on disk',
     });
   } catch (error) {
-    if (!errorText(error, '').includes(SINGLE_OFFSCREEN)) {
+    if (!errorMessage(error, '').includes(SINGLE_OFFSCREEN)) {
       throw error;
     }
   }
@@ -117,34 +109,42 @@ function cancelDownloads(job: StreamJob): void {
   }
 }
 
-function notify(job: StreamJob, title: string, message: string): void {
-  if (!chrome.notifications) {
-    return;
-  }
-  chrome.notifications.create(`pkaf-stream-${job.id}`, {
-    type: 'basic',
-    iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
-    title,
-    message,
-  });
+function streamsSupported(): boolean {
+  return Boolean(chrome.offscreen && chrome.runtime.getContexts);
 }
 
-export async function startStreamJob(url: string, title: string, pageUrl: string): Promise<DownloadResult> {
+async function planFor(url: string, options: StreamJobOptions): Promise<StreamPlan> {
+  const plan = await resolveStream(url, options.maxHeight);
+  if (!options.audioOnly) {
+    return plan;
+  }
+  const audio = audioOnlyPlan(plan);
+  if (!audio) {
+    throw new Error('This stream has no separate audio track, so audio only is not available');
+  }
+  return audio;
+}
+
+export async function startStreamJob(url: string, title: string, pageUrl: string, options: StreamJobOptions): Promise<DownloadResult> {
   if (!chrome.downloads) {
     return { ok: false, error: 'Turn on the video downloader in the extension settings' };
   }
-  let plan;
+  if (!streamsSupported()) {
+    return { ok: false, error: 'Stream downloads are not supported in this browser yet. Direct video files still work.' };
+  }
+  let plan: StreamPlan;
   try {
-    plan = await resolveStream(url);
+    plan = await planFor(url, options);
   } catch (error) {
-    return { ok: false, error: errorText(error, 'Could not read this stream') };
+    return { ok: false, error: errorMessage(error, 'Could not read this stream') };
   }
   const job = await serial(async () => {
     const jobs = await readStreamJobs();
-    if (jobs.some((item) => item.manifestUrl === plan.manifestUrl && ACTIVE_STREAM_STATES.has(item.state))) {
+    const sameJob = (item: StreamJob) => item.manifestUrl === plan.manifestUrl && Boolean(item.audioOnly) === options.audioOnly;
+    if (jobs.some((item) => sameJob(item) && ACTIVE_STREAM_STATES.has(item.state))) {
       return null;
     }
-    const created = newStreamJob(crypto.randomUUID(), plan, title.trim() || 'video', pageUrl, new Date());
+    const created = newStreamJob(crypto.randomUUID(), plan, title.trim() || 'video', pageUrl, new Date(), options.audioOnly);
     await writeJobs([created, ...jobs]);
     return created;
   });
@@ -155,6 +155,9 @@ export async function startStreamJob(url: string, title: string, pageUrl: string
   if (!(await command({ target: 'offscreen', type: 'run', id: job.id, plan }))) {
     await updateJob(job.id, () => ({ state: 'failed', error: 'Could not start the download' }));
     return { ok: false, error: 'Could not start the download' };
+  }
+  if (options.saveSubtitles && plan.subtitles) {
+    void saveSubtitles(plan.subtitles, job.title).catch(() => undefined);
   }
   return { ok: true };
 }
@@ -191,7 +194,7 @@ export async function handleOffscreenEvent(event: OffscreenEvent): Promise<void>
   }
   if (event.type === 'stream-track-ready') {
     await saveTrack(event).catch(async (error) => {
-      await updateJob(event.id, whileActive({ state: 'failed', error: errorText(error, 'Could not save the file') }));
+      await updateJob(event.id, whileActive({ state: 'failed', error: errorMessage(error, 'Could not save the file') }));
       await cleanupOffscreen(event.id);
     });
     return;
@@ -205,7 +208,7 @@ export async function handleOffscreenEvent(event: OffscreenEvent): Promise<void>
     cancelDownloads(job);
   }
   if (job && !event.cancelled) {
-    notify(job, 'Download failed', `${job.title}: ${event.error}`);
+    notify(`stream-${job.id}`, 'Download failed', `${job.title}: ${event.error}`);
   }
 }
 
@@ -241,7 +244,7 @@ async function handleDownloadChange(delta: chrome.downloads.DownloadDelta): Prom
   const finished = await updateJob(job.id, whileActive({ state: 'complete' }));
   await cleanupOffscreen(job.id);
   if (finished) {
-    notify(finished, 'Download complete', finished.title);
+    notify(`stream-${finished.id}`, 'Download complete', finished.title);
   }
 }
 
@@ -285,7 +288,7 @@ export async function controlStreamJob(id: string, action: StreamControl): Promi
     return { ok: false };
   }
   if (action === 'retry') {
-    const result = await startStreamJob(job.manifestUrl, job.title, job.pageUrl);
+    const result = await startStreamJob(job.manifestUrl, job.title, job.pageUrl, await streamJobOptions(job.audioOnly === true));
     if (!result.ok) {
       return { ok: false };
     }

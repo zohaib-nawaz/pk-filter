@@ -1,5 +1,5 @@
 import { normalizeDomain } from './domain';
-import type { FilterMode, Settings } from './types';
+import type { FilterMode, Settings, StreamQuality } from './types';
 
 export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
@@ -12,6 +12,11 @@ export const DEFAULT_SETTINGS: Settings = {
   videoShowUnavailable: false,
   streamDomains: [],
   preferredIsp: '',
+  explainFailures: false,
+  streamQuality: 'best',
+  saveSubtitles: true,
+  nightStartHour: 1,
+  nightEndHour: 9,
 };
 
 export const MAX_STREAM_DOMAINS = 50;
@@ -49,8 +54,40 @@ export const CHECK_FREQUENCIES: Array<{ value: number; label: string }> = [
   { value: 1440, label: 'Once a day' },
 ];
 
+export const STREAM_QUALITIES: Array<{ value: StreamQuality; label: string }> = [
+  { value: 'best', label: 'Best available' },
+  { value: '1080', label: 'Up to 1080p' },
+  { value: '720', label: 'Up to 720p' },
+  { value: '480', label: 'Up to 480p (saves data)' },
+  { value: '360', label: 'Up to 360p (smallest)' },
+];
+
+export function maxHeightFor(quality: StreamQuality): number {
+  if (quality === 'best') {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Number(quality);
+}
+
 const MODES = new Set<FilterMode>(FILTER_MODES.map((mode) => mode.value));
 const FREQUENCIES = new Set(CHECK_FREQUENCIES.map((option) => option.value));
+const QUALITIES = new Set<StreamQuality>(STREAM_QUALITIES.map((option) => option.value));
+
+function hour(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 23) {
+    return value;
+  }
+  return fallback;
+}
+
+function nightWindow(raw: Partial<Record<keyof Settings, unknown>>): Pick<Settings, 'nightStartHour' | 'nightEndHour'> {
+  const nightStartHour = hour(raw.nightStartHour, DEFAULT_SETTINGS.nightStartHour);
+  const nightEndHour = hour(raw.nightEndHour, DEFAULT_SETTINGS.nightEndHour);
+  if (nightStartHour === nightEndHour) {
+    return { nightStartHour: DEFAULT_SETTINGS.nightStartHour, nightEndHour: DEFAULT_SETTINGS.nightEndHour };
+  }
+  return { nightStartHour, nightEndHour };
+}
 
 function flag(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
@@ -72,5 +109,9 @@ export function sanitizeSettings(input: unknown): Settings {
     videoShowUnavailable: flag(raw.videoShowUnavailable, DEFAULT_SETTINGS.videoShowUnavailable),
     streamDomains: streamDomainList(raw.streamDomains),
     preferredIsp: typeof raw.preferredIsp === 'string' ? raw.preferredIsp.trim().slice(0, 64) : DEFAULT_SETTINGS.preferredIsp,
+    explainFailures: flag(raw.explainFailures, DEFAULT_SETTINGS.explainFailures),
+    streamQuality: QUALITIES.has(raw.streamQuality as StreamQuality) ? (raw.streamQuality as StreamQuality) : DEFAULT_SETTINGS.streamQuality,
+    saveSubtitles: flag(raw.saveSubtitles, DEFAULT_SETTINGS.saveSubtitles),
+    ...nightWindow(raw),
   };
 }

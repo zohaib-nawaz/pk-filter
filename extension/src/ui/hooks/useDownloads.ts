@@ -1,3 +1,4 @@
+import { errorMessage } from '../../core/errors';
 import { useCallback, useEffect, useState } from 'react';
 import type { DownloadView } from '../../core/types';
 import { onDownloadRecordsChanged } from '../../shared/download-store';
@@ -43,7 +44,7 @@ export function useDownloads() {
       try {
         setMessage(await downloadActions[action](view));
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : 'Action failed');
+        setMessage(errorMessage(error, 'Action failed'));
       }
       await refresh();
     },

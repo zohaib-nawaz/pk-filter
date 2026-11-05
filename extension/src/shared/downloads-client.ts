@@ -1,19 +1,10 @@
 import { toDownloadView, toStreamView } from '../core/downloads';
-import type { StreamJob } from '../core/stream-jobs';
 import type { DownloadView } from '../core/types';
 import { readDownloadRecords } from './download-store';
 import { sendRequest } from './messaging';
+import { readStreamJobs } from './stream-job-store';
 
-const STREAM_JOBS_KEY = 'stream-jobs';
-
-async function readStreamJobs(): Promise<StreamJob[]> {
-  const stored = await chrome.storage.local.get(STREAM_JOBS_KEY);
-  const jobs = stored[STREAM_JOBS_KEY];
-  if (!Array.isArray(jobs)) {
-    return [];
-  }
-  return jobs as StreamJob[];
-}
+export { onStreamJobsChanged } from './stream-job-store';
 
 async function fileViews(): Promise<DownloadView[]> {
   const records = await readDownloadRecords();
@@ -27,16 +18,6 @@ async function fileViews(): Promise<DownloadView[]> {
 export async function listDownloads(): Promise<DownloadView[]> {
   const [files, streams] = await Promise.all([fileViews(), readStreamJobs()]);
   return [...files, ...streams.map(toStreamView)].sort((a, b) => b.record.startedAt.localeCompare(a.record.startedAt));
-}
-
-export function onStreamJobsChanged(listener: () => void): () => void {
-  const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'local' && changes[STREAM_JOBS_KEY]) {
-      listener();
-    }
-  };
-  chrome.storage.onChanged.addListener(handler);
-  return () => chrome.storage.onChanged.removeListener(handler);
 }
 
 export function isDownloaderAvailable(): boolean {

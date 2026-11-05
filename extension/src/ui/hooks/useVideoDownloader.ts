@@ -1,37 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import type { Settings } from '../../core/types';
 import { sendRequest } from '../../shared/messaging';
-import { hasDownloaderPermissions, removeDownloaderPermissions, requestDownloaderPermissions } from '../../shared/permissions';
+import { DOWNLOADER_PERMISSIONS } from '../../shared/permissions';
+import type { SettingsUpdate } from '../../shared/storage';
+import { usePermissionToggle } from './usePermissionToggle';
 
-export function useVideoDownloader(settings: Settings | null, update: (patch: Partial<Settings>) => Promise<void>) {
-  const [error, setError] = useState<string | null>(null);
+const syncVideoSites = () => sendRequest({ type: 'sync-video-sites' });
 
-  useEffect(() => {
-    if (!settings?.videoDownloader) {
-      return;
-    }
-    void hasDownloaderPermissions().then((granted) => {
-      if (!granted) {
-        void update({ videoDownloader: false });
-      }
-    });
-  }, [settings?.videoDownloader, update]);
-
-  const setEnabled = async (enabled: boolean) => {
-    setError(null);
-    if (enabled) {
-      const permission = await requestDownloaderPermissions();
-      if (!permission.granted) {
-        setError(`${permission.error} The downloader stays off.`);
-        return;
-      }
-      await update({ videoDownloader: true });
-    } else {
-      await update({ videoDownloader: false });
-      await removeDownloaderPermissions();
-    }
-    await sendRequest({ type: 'sync-video-sites' });
-  };
-
-  return { setEnabled, error };
+export function useVideoDownloader(settings: Settings | null, update: (patch: SettingsUpdate) => Promise<void>) {
+  const save = useCallback((videoDownloader: boolean) => update({ videoDownloader }), [update]);
+  return usePermissionToggle({
+    enabled: settings ? settings.videoDownloader : false,
+    permissions: DOWNLOADER_PERMISSIONS,
+    save,
+    refusedSuffix: ' The downloader stays off.',
+    afterChange: syncVideoSites,
+  });
 }

@@ -4,12 +4,16 @@ import type { OffscreenEvent, StreamControl } from './stream-jobs';
 
 export type DownloadResult = { ok: true } | { ok: false; error: string };
 
+export type ScheduleResult = { ok: true; startsNow: boolean } | { ok: false; error: string };
+
 export type Request =
   | { type: 'lookup'; domains: string[] }
   | { type: 'check'; domains: string[] }
   | { type: 'site-status'; domain: string }
   | { type: 'inspect-media'; url: string }
-  | { type: 'download'; url: string; title: string; pageUrl?: string }
+  | { type: 'download'; url: string; title: string; pageUrl?: string; audioOnly?: boolean }
+  | { type: 'schedule-download'; url: string; title: string; pageUrl?: string; audioOnly?: boolean }
+  | { type: 'unschedule-download'; id: string }
   | { type: 'stream-control'; id: string; action: StreamControl }
   | { type: 'remove-download'; id: number }
   | OffscreenEvent
@@ -26,6 +30,8 @@ export interface ResponseMap {
   'site-status': SiteStatus;
   'inspect-media': MediaInfo;
   download: DownloadResult;
+  'schedule-download': ScheduleResult;
+  'unschedule-download': { ok: boolean };
   'sync-video-sites': { ok: boolean };
   'page-videos': { ok: boolean };
   'tab-videos': { videos: PageVideo[] };

@@ -204,7 +204,11 @@ function toPageVideo(info: MediaInfo | null, title: string): PageVideo | null {
   if (!info?.extension) {
     return null;
   }
-  return { url: info.url, title, extension: info.extension, sizeBytes: info.sizeBytes };
+  const video: PageVideo = { url: info.url, title, extension: info.extension, sizeBytes: info.sizeBytes };
+  if (info.separateAudio) {
+    video.separateAudio = true;
+  }
+  return video;
 }
 
 function report(): void {

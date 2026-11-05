@@ -1,3 +1,4 @@
+import { errorMessage } from '../core/errors';
 import { interleave, mergeInitSegments, retagFragment } from '../core/fmp4';
 import type { StreamPlan, StreamSegment, StreamTrack } from '../core/hls';
 import { runSegments, SegmentError, type SegmentChunk } from '../core/segment-pipeline';
@@ -171,10 +172,7 @@ function failureText(cancelled: boolean, error: unknown): string {
   if (cancelled) {
     return 'Cancelled';
   }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return 'Stream download failed';
+  return errorMessage(error, 'Stream download failed');
 }
 
 async function saveCombinedIfPossible(context: JobContext, plan: StreamPlan): Promise<boolean> {

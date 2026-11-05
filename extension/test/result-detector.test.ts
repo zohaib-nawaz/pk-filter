@@ -43,7 +43,9 @@ describe('decorateVideoResult', () => {
     expect(buttons[0]).not.toBeNull();
     expect(buttons[1]).toBeNull();
     releaseAll(document);
-    for (const element of document.querySelectorAll('pkaf-video')) element.remove();
+    for (const element of document.querySelectorAll('pkaf-video')) {
+      element.remove();
+    }
     expect(claimResults(document, 'https://www.google.com').map((result) => decorateVideoResult(result, false))).toEqual([null, null]);
   });
 });

@@ -1,6 +1,7 @@
 import { formatBytes } from '../../core/download-errors';
 import { progressPercent } from '../../core/downloads';
 import type { DownloadView } from '../../core/types';
+import { ErrorText } from './ErrorText';
 
 export interface DownloadHandlers {
   onPause: (view: DownloadView) => void;
@@ -88,13 +89,6 @@ function barWidth(percent: number | null, state: DownloadView['state']): number 
   return 0;
 }
 
-function renderError(error: string | null | undefined) {
-  if (!error) {
-    return null;
-  }
-  return <p className="text-xs text-red-600 dark:text-red-400">{error}</p>;
-}
-
 function actionsFor(view: DownloadView, saving: boolean, handlers: DownloadHandlers): ActionSpec[] {
   const { state } = view;
   const running = state === 'in_progress' || state === 'paused';
@@ -136,7 +130,7 @@ export function DownloadItem({ view, ...handlers }: DownloadItemProps) {
           {percentText(percent, state)} · {sizeText(view)}
         </span>
       </div>
-      {renderError(view.error)}
+      <ErrorText message={view.error} />
       <div className="-ml-1.5 flex flex-wrap gap-0.5">
         {actionsFor(view, saving, handlers).map((action) => (
           <Action key={action.label} label={action.label} onClick={() => action.run(view)} />

@@ -17,6 +17,13 @@ export interface StreamJob {
   error: string | null;
   downloadIds: number[];
   startedAt: string;
+  audioOnly?: boolean;
+}
+
+export interface StreamJobOptions {
+  audioOnly: boolean;
+  maxHeight: number;
+  saveSubtitles: boolean;
 }
 
 export type StreamControl = 'pause' | 'resume' | 'cancel' | 'retry' | 'remove';
@@ -34,7 +41,7 @@ export type OffscreenEvent =
 
 export const ACTIVE_STREAM_STATES = new Set<StreamJobState>(['downloading', 'paused', 'saving']);
 
-export function newStreamJob(id: string, plan: StreamPlan, title: string, pageUrl: string, now: Date): StreamJob {
+export function newStreamJob(id: string, plan: StreamPlan, title: string, pageUrl: string, now: Date, audioOnly = false): StreamJob {
   return {
     id,
     title,
@@ -50,5 +57,6 @@ export function newStreamJob(id: string, plan: StreamPlan, title: string, pageUr
     error: null,
     downloadIds: [],
     startedAt: now.toISOString(),
+    audioOnly,
   };
 }

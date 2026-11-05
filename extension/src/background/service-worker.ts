@@ -1,22 +1,21 @@
-import { matchesStreamDomain } from '../core/hls';
-import { extensionFromPath, safeHttpUrl } from '../core/media';
-import type { Request, ResponseMap } from '../core/messages';
-import { clearCache, countCache, loadSettings, readSync, requestRefresh, writeSync } from '../shared/storage';
 import { normalizeDomain } from '../core/domain';
+import type { Request, ResponseMap } from '../core/messages';
+import { removeDownloadRecord } from '../shared/download-store';
+import { clearCache, countCache, readSync, requestRefresh, writeSync } from '../shared/storage';
 import { getHistory, getServiceStatus } from './api-client';
 import { checkDomains, lookupCached, resetBackoff } from './checker';
-import { removeDownloadRecord } from '../shared/download-store';
-import { startDownload, watchDownloads } from './download-manager';
-import { inspectMedia } from './media-inspector';
+import { createContextMenus, watchContextMenus } from './context-menu';
+import { watchDownloads } from './download-manager';
+import { inspectAny, startAny } from './download-router';
+import { watchFailedSites } from './failed-sites';
+import { rescheduleNightQueue, scheduleDownload, unscheduleDownload, watchNightQueue } from './night-queue';
 import { getPageVideos, setPageVideos, watchTabs } from './page-videos';
-import { inspectStream } from './stream-resolver';
-import { controlStreamJob, failInterruptedJobs, handleOffscreenEvent, startStreamJob, watchStreamDownloads } from './stream-jobs';
+import { controlStreamJob, failInterruptedJobs, handleOffscreenEvent, watchStreamDownloads } from './stream-jobs';
 import { syncVideoSites } from './video-sites';
 
 const ADMIN_TYPES = ['overview', 'refresh', 'clear-cache', 'sync-video-sites'];
 const OFFSCREEN_EVENTS = ['stream-progress', 'stream-track-ready', 'stream-failed', 'stream-split'];
 const STREAM_ACTIONS = ['pause', 'resume', 'cancel', 'retry', 'remove'];
-const STREAM_EXTENSIONS = ['m3u8', 'mpd'];
 
 function isStringList(value: unknown, max: number): value is string[] {
   return Array.isArray(value) && value.length <= max && value.every((item) => typeof item === 'string');
@@ -30,8 +29,26 @@ function isPageVideo(value: unknown): boolean {
     video.url.length <= 4096 &&
     typeof video.title === 'string' &&
     typeof video.extension === 'string' &&
-    (video.sizeBytes === null || typeof video.sizeBytes === 'number')
+    (video.sizeBytes === null || typeof video.sizeBytes === 'number') &&
+    (video.separateAudio === undefined || typeof video.separateAudio === 'boolean')
   );
+}
+
+function isDownloadRequest(message: Record<string, unknown>): boolean {
+  return (
+    typeof message.url === 'string' &&
+    message.url.length <= 4096 &&
+    typeof message.title === 'string' &&
+    (message.pageUrl === undefined || typeof message.pageUrl === 'string') &&
+    (message.audioOnly === undefined || typeof message.audioOnly === 'boolean')
+  );
+}
+
+function pageUrlFor(sender: chrome.runtime.MessageSender, claimed: string | undefined): string | undefined {
+  if (sender.tab) {
+    return sender.tab.url;
+  }
+  return claimed;
 }
 
 function fromExtensionPage(sender: chrome.runtime.MessageSender): boolean {
@@ -68,13 +85,13 @@ function isRequest(value: unknown, sender: chrome.runtime.MessageSender): value 
     return typeof message.url === 'string' && message.url.length <= 4096;
   }
   if (message.type === 'download') {
-    const pageUrl = (message as { pageUrl?: unknown }).pageUrl;
-    return (
-      typeof message.url === 'string' &&
-      message.url.length <= 4096 &&
-      typeof message.title === 'string' &&
-      (pageUrl === undefined || typeof pageUrl === 'string')
-    );
+    return isDownloadRequest(message as Record<string, unknown>);
+  }
+  if (message.type === 'schedule-download') {
+    return fromExtensionPage(sender) && isDownloadRequest(message as Record<string, unknown>);
+  }
+  if (message.type === 'unschedule-download') {
+    return fromExtensionPage(sender) && typeof message.id === 'string';
   }
   if (message.type === 'page-videos') {
     return Array.isArray(message.videos) && message.videos.length <= 50 && message.videos.every(isPageVideo);
@@ -86,17 +103,6 @@ function isRequest(value: unknown, sender: chrome.runtime.MessageSender): value 
     return fromExtensionPage(sender) && Number.isInteger(message.tabId);
   }
   return ADMIN_TYPES.includes(message.type) && fromExtensionPage(sender);
-}
-
-async function streamPage(url: string, sender: chrome.runtime.MessageSender, claimedPageUrl?: string): Promise<string | null> {
-  const pageUrl = sender.tab ? sender.tab.url : claimedPageUrl;
-  const target = safeHttpUrl(url);
-  const page = safeHttpUrl(pageUrl);
-  if (!target || !page || !STREAM_EXTENSIONS.includes(extensionFromPath(target) ?? '')) {
-    return null;
-  }
-  const settings = await loadSettings();
-  return settings.videoDownloader && matchesStreamDomain(page.hostname, settings.streamDomains) ? page.toString() : null;
 }
 
 async function handle(request: Request, sender: chrome.runtime.MessageSender): Promise<ResponseMap[Request['type']]> {
@@ -138,12 +144,19 @@ async function handle(request: Request, sender: chrome.runtime.MessageSender): P
       return { domain, result, history };
     }
     case 'inspect-media':
-      return (await streamPage(request.url, sender)) ? inspectStream(request.url) : inspectMedia(request.url);
-    case 'download': {
-      const title = request.title.slice(0, 300);
-      const page = await streamPage(request.url, sender, request.pageUrl);
-      return page ? startStreamJob(request.url, title, page) : startDownload(request.url, title);
-    }
+      return inspectAny(request.url, pageUrlFor(sender, undefined));
+    case 'download':
+      return startAny(request.url, request.title, pageUrlFor(sender, request.pageUrl), { audioOnly: request.audioOnly === true });
+    case 'schedule-download':
+      return scheduleDownload({
+        url: request.url,
+        title: request.title.slice(0, 300),
+        pageUrl: request.pageUrl === undefined ? null : request.pageUrl,
+        audioOnly: request.audioOnly === true,
+      });
+    case 'unschedule-download':
+      await unscheduleDownload(request.id);
+      return { ok: true };
     case 'sync-video-sites':
       return { ok: await syncVideoSites() };
     case 'overview': {
@@ -184,14 +197,25 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 
 chrome.permissions.onAdded.addListener(() => syncDownloader());
 chrome.permissions.onRemoved.addListener(() => syncDownloader());
-chrome.runtime.onStartup.addListener(() => syncDownloader());
-chrome.runtime.onInstalled.addListener(() => syncDownloader(true));
+chrome.runtime.onStartup.addListener(() => {
+  createContextMenus();
+  syncDownloader();
+});
+chrome.runtime.onInstalled.addListener(() => {
+  createContextMenus();
+  syncDownloader(true);
+});
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync' && changes.settings) {
     syncDownloader();
+    rescheduleNightQueue();
   }
 });
+chrome.permissions.onAdded.addListener(() => watchFailedSites());
 watchDownloads();
 watchStreamDownloads();
 watchTabs();
+watchContextMenus();
+watchFailedSites();
+watchNightQueue(startAny);
 void failInterruptedJobs().catch(() => undefined);

@@ -4,6 +4,8 @@ export type DisplayStatus = AccessStatus | 'checking';
 
 export type FilterMode = 'all' | 'hide_blocked' | 'only_accessible';
 
+export type StreamQuality = 'best' | '1080' | '720' | '480' | '360';
+
 export interface ProbeNetwork {
   isp: string;
   asn: string;
@@ -44,6 +46,11 @@ export interface Settings {
   videoShowUnavailable: boolean;
   streamDomains: string[];
   preferredIsp: string;
+  explainFailures: boolean;
+  streamQuality: StreamQuality;
+  saveSubtitles: boolean;
+  nightStartHour: number;
+  nightEndHour: number;
 }
 
 export interface SyncState {
@@ -90,6 +97,7 @@ export interface MediaInfo {
   mime: string | null;
   sizeBytes: number | null;
   reason: string;
+  separateAudio?: boolean;
 }
 
 export interface DownloadRecord {
@@ -121,4 +129,19 @@ export interface PageVideo {
   title: string;
   extension: string;
   sizeBytes: number | null;
+  separateAudio?: boolean;
+}
+
+export interface DownloadOptions {
+  audioOnly: boolean;
+}
+
+export interface ScheduledDownload {
+  id: string;
+  url: string;
+  title: string;
+  pageUrl: string | null;
+  audioOnly: boolean;
+  addedAt: string;
+  error?: string;
 }

@@ -6,6 +6,7 @@ import { Button } from '../ui/components/Button';
 import { DownloadList } from '../ui/components/DownloadList';
 import { OptionList } from '../ui/components/OptionList';
 import { PageVideoList } from '../ui/components/PageVideoList';
+import { ScheduledList } from '../ui/components/ScheduledList';
 import { ServiceSummary } from '../ui/components/ServiceSummary';
 import { Switch } from '../ui/components/Switch';
 import { SiteStatusCard } from '../ui/components/SiteStatusCard';
@@ -13,6 +14,7 @@ import { Tabs } from '../ui/components/Tabs';
 import { useDownloads } from '../ui/hooks/useDownloads';
 import { useOverview } from '../ui/hooks/useOverview';
 import { usePageVideos } from '../ui/hooks/usePageVideos';
+import { useScheduled } from '../ui/hooks/useScheduled';
 import { useSiteStatus } from '../ui/hooks/useSiteStatus';
 import { useSettings } from '../ui/hooks/useSettings';
 import { Header } from './components/Header';
@@ -44,6 +46,7 @@ export function App() {
   const downloads = useDownloads();
   const pageVideos = usePageVideos();
   const site = useSiteStatus(settings?.preferredIsp);
+  const scheduled = useScheduled();
   const [tab, setTab] = useState<Tab>('filter');
   const [tabChosen, setTabChosen] = useState(false);
   const videos = pageVideoList(pageVideos.videos);
@@ -122,12 +125,18 @@ export function App() {
     if (!settings.videoDownloader || videos.length === 0) {
       return null;
     }
-    return <PageVideoList videos={videos} states={pageVideos.states} onDownload={(video) => void pageVideos.download(video)} />;
+    return <PageVideoList videos={videos} states={pageVideos.states} onAction={(video, action) => void pageVideos.run(video, action)} />;
   };
 
   const renderDownloadsTab = () => (
     <>
       {renderPageVideos()}
+      <ScheduledList
+        items={scheduled.items}
+        startHour={settings.nightStartHour}
+        endHour={settings.nightEndHour}
+        onCancel={(id) => void scheduled.cancel(id)}
+      />
       <DownloadList
         items={downloads.items}
         enabled={settings.videoDownloader && downloads.available}

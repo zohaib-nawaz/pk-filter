@@ -16,6 +16,7 @@ export default defineConfig({
       input: {
         popup: resolve(import.meta.dirname, 'src/popup/index.html'),
         options: resolve(import.meta.dirname, 'src/options/index.html'),
+        site: resolve(import.meta.dirname, 'src/site/index.html'),
       },
     },
   },

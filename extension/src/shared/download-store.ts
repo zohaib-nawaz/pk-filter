@@ -1,17 +1,13 @@
 import { createLimiter } from '../core/limiter';
 import type { DownloadRecord } from '../core/types';
+import { onKeyChanged, readList } from './storage-keys';
 
 const RECORDS_KEY = 'downloads';
 const MAX_RECORDS = 50;
 const queue = createLimiter(1);
 
-export async function readDownloadRecords(): Promise<DownloadRecord[]> {
-  const stored = await chrome.storage.local.get(RECORDS_KEY);
-  const records = stored[RECORDS_KEY];
-  if (!Array.isArray(records)) {
-    return [];
-  }
-  return records as DownloadRecord[];
+export function readDownloadRecords(): Promise<DownloadRecord[]> {
+  return readList<DownloadRecord>('local', RECORDS_KEY);
 }
 
 function writeRecords(change: (records: DownloadRecord[]) => DownloadRecord[]): Promise<void> {
@@ -30,11 +26,5 @@ export function removeDownloadRecord(id: number): Promise<void> {
 }
 
 export function onDownloadRecordsChanged(listener: () => void): () => void {
-  const handler = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'local' && changes[RECORDS_KEY]) {
-      listener();
-    }
-  };
-  chrome.storage.onChanged.addListener(handler);
-  return () => chrome.storage.onChanged.removeListener(handler);
+  return onKeyChanged('local', RECORDS_KEY, listener);
 }

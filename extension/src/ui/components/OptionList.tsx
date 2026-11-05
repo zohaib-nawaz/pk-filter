@@ -1,3 +1,5 @@
+import { dimmedWhen } from '../classes';
+
 interface Option<T extends string> {
   value: T;
   label: string;
@@ -10,13 +12,6 @@ interface OptionListProps<T extends string> {
   options: Option<T>[];
   disabled?: boolean;
   onChange: (value: T) => void;
-}
-
-function dimmed(disabled: boolean | undefined): string {
-  if (disabled) {
-    return 'pointer-events-none opacity-50';
-  }
-  return '';
 }
 
 function optionClass(selected: boolean): string {
@@ -35,7 +30,7 @@ function renderHint(hint: string | undefined) {
 
 export function OptionList<T extends string>({ name, value, options, disabled, onChange }: OptionListProps<T>) {
   return (
-    <div role="radiogroup" className={`flex flex-col gap-1 ${dimmed(disabled)}`}>
+    <div role="radiogroup" className={`flex flex-col gap-1 ${dimmedWhen(disabled)}`}>
       {options.map((option) => (
         <label
           key={option.value}

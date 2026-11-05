@@ -12,8 +12,12 @@ function chunk(type, data) {
 function pixel(x, y, size) {
   const c = (size - 1) / 2;
   const d = Math.hypot(x - c, y - c) / (size / 2);
-  if (d > 0.98) return [0, 0, 0, 0];
-  if (d > 0.84) return [24, 128, 56, 255];
+  if (d > 0.98) {
+    return [0, 0, 0, 0];
+  }
+  if (d > 0.84) {
+    return [24, 128, 56, 255];
+  }
   const inCheck =
     (Math.abs(y - (x + size * 0.12)) < size * 0.07 && x > size * 0.28 && x < size * 0.46) ||
     (Math.abs(y - (-1.25 * x + size * 1.18)) < size * 0.08 && x >= size * 0.42 && x < size * 0.74);
