@@ -1,6 +1,7 @@
+import { BRAND } from '../core/brand';
 import { googleEngine, type SearchEngine } from './search-engines';
 
-export const CLAIM_ATTRIBUTE = 'data-pkaf';
+export const CLAIM_ATTRIBUTE = `data-${BRAND.slug}`;
 
 export interface SearchResult {
   container: HTMLElement;

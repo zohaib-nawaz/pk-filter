@@ -1,12 +1,12 @@
 # Deployment guide
 
-## 1. Pakistan VPS
+## 1. VPS in the country you measure
 
-The backend must run on a server **physically in Pakistan** on a normal Pakistani ISP network. A server elsewhere will report what that country sees, not Pakistan.
+The backend must run on a server **physically in the country you want to measure**, on a normal consumer ISP network. A server elsewhere reports what its own country sees.
 
 Minimum: 1 vCPU, 1 GB RAM, Ubuntu 22.04/24.04, a public IPv4, a domain pointing to it (for HTTPS).
 
-Pick a provider whose upstream is a common consumer ISP (PTCL, Nayatel, Jazz, etc.). Note the ISP name and ASN; you'll put them in `.env`. Check the ASN with:
+Pick a provider whose upstream is a common consumer ISP (a large home-broadband or mobile ISP). Note the ISP name and ASN; you'll put them in `.env`. Check the ASN with:
 
 ```bash
 curl -s https://ipinfo.io/org
@@ -25,19 +25,19 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt in
 ```
 
 ```bash
-sudo useradd --system --create-home --shell /usr/sbin/nologin pkaf
+sudo useradd --system --create-home --shell /usr/sbin/nologin netvron
 ```
 
 ```bash
-sudo -u pkaf git clone <your-repo-url> /home/pkaf/app
+sudo -u netvron git clone <your-repo-url> /home/netvron/app
 ```
 
 ```bash
-cd /home/pkaf/app/backend && sudo -u pkaf npm ci && sudo -u pkaf npm run build
+cd /home/netvron/app/backend && sudo -u netvron npm ci && sudo -u netvron npm run build
 ```
 
 ```bash
-sudo -u pkaf cp .env.example .env && sudo -u pkaf nano .env
+sudo -u netvron cp .env.example .env && sudo -u netvron nano .env
 ```
 
 Set at least `PROBE_ISP`, `PROBE_ASN`, `PROBE_CITY`, `HOST=127.0.0.1`, `TRUST_PROXY=true`.
@@ -55,24 +55,24 @@ DATABASE_URL=postgresql://user:password@host:5432/db?sslmode=require
 Migrations run on boot. To run them by hand:
 
 ```bash
-cd /home/pkaf/app/backend && sudo -u pkaf npm run migrate
+cd /home/netvron/app/backend && sudo -u netvron npm run migrate
 ```
 
 Rows older than `RETENTION_DAYS` (default 30) are pruned every 6 hours.
 
 ## 4. systemd service
 
-`/etc/systemd/system/pkaf.service`:
+`/etc/systemd/system/netvron.service`:
 
 ```ini
 [Unit]
-Description=PK Access Filter API
+Description=NETVRON API
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=pkaf
-WorkingDirectory=/home/pkaf/app/backend
+User=netvron
+WorkingDirectory=/home/netvron/app/backend
 ExecStart=/usr/bin/node --env-file=.env dist/server.js
 Restart=always
 RestartSec=5
@@ -86,7 +86,7 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl daemon-reload && sudo systemctl enable --now pkaf && sudo systemctl status pkaf
+sudo systemctl daemon-reload && sudo systemctl enable --now netvron && sudo systemctl status netvron
 ```
 
 ## 5. HTTPS with Caddy
@@ -94,7 +94,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now pkaf && sudo systemc
 `/etc/caddy/Caddyfile`:
 
 ```
-pk-probe.example.com {
+probe.example.com {
   reverse_proxy 127.0.0.1:8787
 }
 ```
@@ -112,28 +112,28 @@ sudo ufw allow 22,80,443/tcp && sudo ufw enable
 Smoke test:
 
 ```bash
-curl -s https://pk-probe.example.com/api/v1/status
+curl -s https://probe.example.com/api/v1/status
 ```
 
 ```bash
-curl -s -X POST https://pk-probe.example.com/api/v1/check -H 'content-type: application/json' -d '{"domains":["dawn.com"],"country":"PK"}'
+curl -s -X POST https://probe.example.com/api/v1/check -H 'content-type: application/json' -d '{"domains":["newsdaily.org"],"country":"auto"}'
 ```
 
 ## 6. Build and publish the extension
 
 ```bash
-cd extension && npm ci && API_URL=https://pk-probe.example.com npm run package
+cd extension && npm ci && API_URL=https://probe.example.com npm run package
 ```
 
-This produces `extension/pk-access-filter.zip` with the API host baked into `host_permissions`. Upload it in the Chrome Web Store developer dashboard. For the listing:
+This produces `extension/netvron-chrome.zip` with the API host baked into `host_permissions`. Upload it in the Chrome Web Store developer dashboard. For the listing:
 
-- Single purpose: show Pakistan accessibility of Google Search results.
+- Single purpose: show whether search results are accessible in the user's country.
 - Permissions: `storage` (settings + cache), host permission for your API only.
 - Data use: only result domain names are sent to your server; no queries, URLs, history or personal data.
 
 ## 7. More ISPs
 
-One VPS represents one network. To cover more ISPs, run the same backend on VPSes in other Pakistani networks and either:
+One VPS represents one network. To cover more ISPs, run the same backend on VPSes on other networks in the same country and either:
 
 - give each its own hostname and build separate extension variants, or
 - put a small fan-out endpoint in front that calls each probe and merges results (store each probe's `network_measurements` row; the schema already keys by ISP/ASN).
@@ -142,7 +142,7 @@ OONI data already includes per-ASN counts (`networks` in the OONI summary), so b
 
 ## 8. Operations
 
-- Logs: `journalctl -u pkaf -f`
-- Update: `git pull && npm ci && npm run build && sudo systemctl restart pkaf`
+- Logs: `journalctl -u netvron -f`
+- Update: `git pull && npm ci && npm run build && sudo systemctl restart netvron`
 - Tune `CHECK_CONCURRENCY` (default 6) and `RATE_LIMIT_PER_MINUTE` (default 60) to the VPS size.
 - If the extension shows "Checking service unreachable", it backs off exponentially (5 s up to 5 min). "Refresh measurements" in the popup resets it.

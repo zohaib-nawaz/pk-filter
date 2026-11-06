@@ -1,8 +1,12 @@
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { build as buildScripts } from 'esbuild';
 import { build as buildPages } from 'vite';
+import { brand } from '../../brand/brand.mjs';
 import { iconPng } from './icons.mjs';
+
+const searchSites = JSON.parse(await readFile(resolve(import.meta.dirname, '../src/core/search-sites.json'), 'utf8'));
 
 const root = resolve(import.meta.dirname, '..');
 const target = process.env.TARGET ?? 'chrome';
@@ -34,7 +38,7 @@ const browserParts = firefox
       background: { scripts: ['background.js'] },
       browser_specific_settings: {
         gecko: {
-          id: 'pk-access-filter@zohaib-nawaz',
+          id: brand.addonId,
           strict_min_version: '128.0',
           data_collection_permissions: { required: ['browsingActivity'] },
         },
@@ -49,27 +53,20 @@ const browserParts = firefox
 
 const manifest = {
   manifest_version: 3,
-  name: 'PK Access Filter',
+  name: brand.name,
   version: pkg.version,
-  description: 'Shows which Google, Bing and DuckDuckGo results are accessible from Pakistan, explains sites that fail to load and downloads direct video files.',
+  description: brand.description,
   host_permissions: [`${apiUrl.origin}/*`],
   optional_host_permissions: ['http://*/*', 'https://*/*'],
   ...browserParts,
   content_scripts: [
     {
-      matches: [
-        'https://www.google.com/search*',
-        'https://google.com/search*',
-        'https://www.google.com.pk/search*',
-        'https://google.com.pk/search*',
-        'https://www.bing.com/search*',
-        'https://duckduckgo.com/*',
-      ],
+      matches: searchSites.matches,
       js: ['content.js'],
       run_at: 'document_idle',
     },
   ],
-  action: { default_title: 'PK Access Filter', default_popup: 'popup/index.html', default_icon: icons },
+  action: { default_title: brand.name, default_popup: 'popup/index.html', default_icon: icons },
   options_ui: { page: 'options/index.html', open_in_tab: true },
   icons,
   content_security_policy: { extension_pages: "script-src 'self'; object-src 'self'" },
@@ -107,3 +104,10 @@ if (!firefox) {
 await writeFile(resolve(dist, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
 console.log(`Built ${target} extension in ${firefox ? 'dist-firefox' : 'dist'}/ (API: ${apiUrl.origin})`);
+
+if (process.argv.includes('--zip')) {
+  const archive = `${brand.slug}-${target}.zip`;
+  await rm(resolve(root, archive), { force: true });
+  execFileSync('zip', ['-qr', resolve(root, archive), '.'], { cwd: dist });
+  console.log(`Packed ${archive}`);
+}

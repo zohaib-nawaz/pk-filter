@@ -1,3 +1,4 @@
+import { BRAND } from '../../core/brand';
 import { Switch } from '../../ui/components/Switch';
 
 interface HeaderProps {
@@ -12,7 +13,7 @@ export function Header({ enabled, country, onToggle }: HeaderProps) {
       <div className="flex items-center gap-2.5">
         <img src="/icons/icon-32.png" alt="" className="h-6 w-6" />
         <div>
-          <h1 className="text-sm font-semibold leading-tight">PK Access Filter</h1>
+          <h1 className="text-sm font-semibold leading-tight">{BRAND.name}</h1>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">Country: {country}</p>
         </div>
       </div>

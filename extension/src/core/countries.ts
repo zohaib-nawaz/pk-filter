@@ -3,7 +3,6 @@ const CODES =
 
 export const COUNTRY_CODES: string[] = CODES.split(' ');
 export const AUTO_COUNTRY = 'auto';
-export const DEFAULT_COUNTRY = 'PK';
 
 const KNOWN = new Set(COUNTRY_CODES);
 
@@ -26,7 +25,7 @@ export function isCountryCode(value: unknown): value is string {
 }
 
 export function countryName(code: string | null | undefined): string {
-  if (!code) {
+  if (!code || !isCountryCode(code)) {
     return 'your country';
   }
   const lookup = displayNames();

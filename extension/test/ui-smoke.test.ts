@@ -10,11 +10,11 @@ const result = (domain: string, status: string) => ({
   domain,
   status,
   confidence: 0.9,
-  country: 'PK',
+  country: 'NL',
   lastChecked: now,
   evidence: ['dns_resolved'],
   method: 'probe',
-  network: { isp: 'PTCL', asn: 'AS17557', city: 'Karachi' },
+  network: { isp: 'NetOne', asn: 'AS64500', city: 'Capital City' },
   ttlSeconds: 1200,
 });
 
@@ -32,13 +32,13 @@ function answer(message: Message): unknown {
     return { videos: [{ url: 'https://videos.example.com/a.m3u8', title: 'Lecture one', extension: 'mp4', sizeBytes: 5_000_000, separateAudio: true }] };
   }
   if (message.type === 'overview' && oldWorker) {
-    return { cachedDomains: 1, sync: { lastSync: null, lastError: null }, service: { online: true, country: 'PK', network: null, networks: [], ooni: true } };
+    return { cachedDomains: 1, sync: { lastSync: null, lastError: null }, service: { online: true, country: 'NL', network: null, networks: [], ooni: true } };
   }
   if (message.type === 'overview') {
     return {
       cachedDomains: 3,
       sync: { lastSync: now, lastError: null },
-      service: { online: true, country: 'PK', network: { isp: 'PTCL', asn: 'AS17557', city: 'Karachi' }, networks: [], ooni: true, probeCountries: ['PK'] },
+      service: { online: true, country: 'NL', network: { isp: 'NetOne', asn: 'AS64500', city: 'Capital City' }, networks: [], ooni: true, probeCountries: ['NL'] },
       viewer: { country: 'DE', source: 'ip', measuredBy: 'ooni' },
     };
   }
@@ -104,7 +104,7 @@ describe('extension pages render', () => {
     window.history.replaceState({}, '', '/site/index.html?domain=example.com&mode=failed&url=https%3A%2F%2Fexample.com%2F&error=CONNECTION_RESET');
     const { App } = await import('../src/site/App');
     const page = await render(App);
-    await vi.waitFor(() => expect(page.textContent).toContain('appears to be blocked in Pakistan'));
+    await vi.waitFor(() => expect(page.textContent).toContain('appears to be blocked in Netherlands'));
     expect(page.textContent).toContain('example.com did not open');
     expect(page.textContent).toContain('cut off');
     expect(page.textContent).toContain('Try again');
@@ -126,7 +126,7 @@ describe('extension pages render', () => {
     installChrome({});
     const { App } = await import('../src/options/App');
     const page = await render(App);
-    await vi.waitFor(() => expect(page.textContent).toContain('Test servers run in Pakistan'));
+    await vi.waitFor(() => expect(page.textContent).toContain('Test servers run in your server’s country'));
   });
 
   it('offers audio only and tonight in the popup and lists the night queue', async () => {

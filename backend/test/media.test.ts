@@ -86,7 +86,7 @@ function serve(path: string, type: string, body: string | Buffer): void {
 async function app() {
   return buildApp({
     service: { check: async () => [], drain: async () => undefined },
-    network: { country: 'PK', isp: 'PTCL', asn: 'AS17557', city: 'Karachi' },
+    network: { country: 'NL', isp: 'NetOne', asn: 'AS64500', city: 'Capital City' },
     ooniEnabled: false,
     persistence: false,
     rateLimitPerMinute: 100,
@@ -307,5 +307,32 @@ describe('media routes', () => {
     expect(body.preview).toBeNull();
     const image = await server.inject({ method: 'GET', url: `/api/v1/media/thumbnail?t=${encodeURIComponent(body.thumbnail)}` });
     expect(image.statusCode).toBe(404);
+  });
+});
+
+describe('tiktok links', () => {
+  it('shows the official TikTok player and no download formats', async () => {
+    const video = 'https://www.tiktok.com/@scout2015/video/6718335390845095173';
+    web.set(`https://www.tiktok.com/oembed?url=${encodeURIComponent(video)}`, {
+      type: 'application/json',
+      body: JSON.stringify({ title: 'Scramble up ur name', author_name: 'Scout', embed_product_id: '6718335390845095173', thumbnail_url: 'https://p16.tiktokcdn.com/cover.jpeg' }),
+    });
+    const server = await app();
+    const body = (await server.inject({ method: 'POST', url: '/api/v1/media/formats', payload: { url: video } })).json() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      source: 'tiktok',
+      title: 'Scramble up ur name',
+      formats: [],
+      preview: null,
+      embed: { provider: 'tiktok', playerUrl: 'https://www.tiktok.com/player/v1/6718335390845095173', author: 'Scout', authorUrl: 'https://www.tiktok.com/@scout2015' },
+    });
+    expect(typeof body.thumbnail).toBe('string');
+  });
+
+  it('explains private or removed TikTok videos', async () => {
+    const server = await app();
+    const response = await server.inject({ method: 'POST', url: '/api/v1/media/formats', payload: { url: 'https://www.tiktok.com/@ab/video/1234567890' } });
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ message: 'This TikTok video could not be found. It may be private or removed.' });
   });
 });

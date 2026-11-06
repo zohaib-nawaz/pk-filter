@@ -1,3 +1,4 @@
+import { brandId } from '../core/brand';
 import { archiveUrl, needsAlternatives } from '../core/alternatives';
 import { countryName } from '../core/countries';
 import { describeEvidence } from '../core/evidence';
@@ -6,8 +7,8 @@ import { formatConfidence, formatNetwork, formatRelative } from '../core/format'
 import { STATUS_META } from '../core/status-meta';
 import type { CheckResult, DisplayStatus } from '../core/types';
 
-export const INDICATOR_TAG = 'pkaf-badge';
-export const TOOLTIP_TAG = 'pkaf-tooltip';
+export const INDICATOR_TAG = brandId('badge');
+export const TOOLTIP_TAG = brandId('tooltip');
 
 export interface Indicator {
   element: HTMLElement;

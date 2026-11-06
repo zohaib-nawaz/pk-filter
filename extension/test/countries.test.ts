@@ -21,7 +21,7 @@ describe('countries', () => {
   it('knows country codes and names', () => {
     expect(isCountryCode('DE')).toBe(true);
     expect(isCountryCode('XX')).toBe(false);
-    expect(countryName('PK')).toBe('Pakistan');
+    expect(countryName('NL')).toBe('Netherlands');
     expect(countryName(null)).toBe('your country');
   });
 
@@ -113,7 +113,7 @@ describe('checker follows the viewer country', () => {
       }
       const country = new URL(url).searchParams.get('country');
       if (country === 'auto') {
-        return new Response(JSON.stringify({ country: 'PK', source: 'default', measuredBy: 'probe' }));
+        return new Response(JSON.stringify({ country: 'NL', source: 'default', measuredBy: 'probe' }));
       }
       return new Response(JSON.stringify({ country, source: 'chosen', measuredBy: 'ooni' }));
     });
@@ -125,7 +125,7 @@ describe('checker follows the viewer country', () => {
 describe('overview from an older service worker', () => {
   it('fills missing fields instead of crashing the pages', async () => {
     const { overviewFrom } = await import('../src/core/overview');
-    const old = overviewFrom({ cachedDomains: 3, sync: { lastSync: null, lastError: null }, service: { online: true, country: 'PK', network: null, networks: [], ooni: true } });
+    const old = overviewFrom({ cachedDomains: 3, sync: { lastSync: null, lastError: null }, service: { online: true, country: 'NL', network: null, networks: [], ooni: true } });
     expect(old?.service.probeCountries).toEqual([]);
     expect(old?.viewer).toBeNull();
     expect(overviewFrom(null)).toBeNull();

@@ -1,4 +1,5 @@
 import { domainFromBingHref, domainFromDisplayedUrl, domainFromHref, domainFromSiteName, isBingHost, normalizeDomain } from '../core/domain';
+import { isGoogleSearchHost } from '../core/search-sites';
 
 export type SearchEngineId = 'google' | 'bing' | 'duckduckgo';
 
@@ -83,7 +84,7 @@ export const duckDuckGoEngine: SearchEngine = {
 
 export function engineFor(hostname: string): SearchEngine | null {
   const host = hostname.toLowerCase();
-  if (/(^|\.)google\.com(\.pk)?$/.test(host)) {
+  if (isGoogleSearchHost(host)) {
     return googleEngine;
   }
   if (isBingHost(host)) {

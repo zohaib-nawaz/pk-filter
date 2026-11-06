@@ -20,11 +20,20 @@ export interface VideoPreview {
   audioOnly: boolean;
 }
 
+export interface VideoEmbed {
+  provider: 'tiktok';
+  playerUrl: string;
+  openUrl: string;
+  author: string | null;
+  authorUrl: string | null;
+}
+
 export interface VideoLookup {
   title: string;
-  source: 'file' | 'hls' | 'dash' | 'page';
+  source: 'file' | 'hls' | 'dash' | 'page' | 'tiktok';
   durationSeconds: number | null;
   preview: VideoPreview;
+  embed: VideoEmbed | null;
   formats: VideoFormat[];
 }
 
@@ -34,6 +43,7 @@ interface LookupBody {
   durationSeconds?: unknown;
   thumbnail?: unknown;
   preview?: { token?: unknown; audioOnly?: unknown } | null;
+  embed?: { provider?: unknown; playerUrl?: unknown; openUrl?: unknown; author?: unknown; authorUrl?: unknown } | null;
   formats?: unknown;
 }
 
@@ -59,7 +69,10 @@ const SOURCE_TEXT: Record<VideoLookup['source'], string> = {
   hls: 'HLS stream',
   dash: 'DASH stream',
   page: 'Found on the page',
+  tiktok: 'TikTok video',
 };
+
+const TIKTOK_PREFIX = 'https://www.tiktok.com/';
 
 function isFormat(value: unknown): value is VideoFormat {
   const item = value as Partial<VideoFormat> | null;
@@ -83,6 +96,33 @@ function mediaRoute(route: 'thumbnail' | 'preview', token: unknown): string | nu
     return null;
   }
   return `${API_URL}/api/v1/media/${route}?t=${encodeURIComponent(token)}`;
+}
+
+function tiktokLink(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.startsWith(TIKTOK_PREFIX)) {
+    return null;
+  }
+  return value;
+}
+
+function optionalText(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) {
+    return null;
+  }
+  return value;
+}
+
+function embedFrom(body: LookupBody): VideoEmbed | null {
+  const embed = body.embed && typeof body.embed === 'object' ? body.embed : null;
+  if (!embed || embed.provider !== 'tiktok') {
+    return null;
+  }
+  const playerUrl = tiktokLink(embed.playerUrl);
+  const openUrl = tiktokLink(embed.openUrl);
+  if (!playerUrl || !openUrl || !playerUrl.startsWith(`${TIKTOK_PREFIX}player/`)) {
+    return null;
+  }
+  return { provider: 'tiktok', playerUrl, openUrl, author: optionalText(embed.author), authorUrl: tiktokLink(embed.authorUrl) };
 }
 
 function previewFrom(body: LookupBody): VideoPreview {
@@ -127,6 +167,7 @@ export async function lookupVideo(url: string): Promise<VideoLookup> {
     source: typeof body.source === 'string' && body.source in SOURCE_TEXT ? (body.source as VideoLookup['source']) : 'file',
     durationSeconds: typeof body.durationSeconds === 'number' ? body.durationSeconds : null,
     preview: previewFrom(body),
+    embed: embedFrom(body),
     formats,
   };
 }
@@ -158,6 +199,12 @@ export function formatRows(lookup: VideoLookup): FormatRow[] {
 
 export function lookupSummary(lookup: VideoLookup): string {
   const parts = [SOURCE_TEXT[lookup.source]];
+  if (lookup.embed) {
+    if (lookup.embed.author) {
+      parts.push(`by ${lookup.embed.author}`);
+    }
+    return parts.join(' · ');
+  }
   if (lookup.durationSeconds !== null && lookup.durationSeconds > 0) {
     parts.push(formatDuration(lookup.durationSeconds));
   }

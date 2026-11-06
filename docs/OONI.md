@@ -1,6 +1,6 @@
 # OONI integration
 
-[OONI](https://ooni.org) collects network measurements from volunteers, including many in Pakistan. We use its public API (https://api.ooni.io) as a second, independent source of evidence. Results are browsable on [OONI Explorer](https://explorer.ooni.org/).
+[OONI](https://ooni.org) collects network measurements from volunteers, in most countries. We use its public API (https://api.ooni.io) as a second, independent source of evidence. Results are browsable on [OONI Explorer](https://explorer.ooni.org/).
 
 ## What we call
 
@@ -8,7 +8,7 @@ One request per host variant (`example.com` and `www.example.com`), made from `b
 
 ```
 GET https://api.ooni.io/api/v1/aggregation
-  ?probe_cc=PK
+  ?probe_cc=DE
   &domain=example.com
   &test_name=web_connectivity
   &since=<today - 30 days>

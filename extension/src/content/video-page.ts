@@ -1,3 +1,4 @@
+import { brandId } from '../core/brand';
 import { matchesStreamDomain } from '../core/hls';
 import { describeSource, extensionFromPath, MEDIA_LINK_EXTENSIONS, safeHttpUrl, sourceKind } from '../core/media';
 import { isVideoButtonShown } from '../core/video-visibility';
@@ -45,7 +46,7 @@ interface TrackedInline {
   media: PageVideo | null;
 }
 
-const TAKEOVER_EVENT = 'pkaf-video-takeover';
+const TAKEOVER_EVENT = brandId('video-takeover');
 const MAX_OVERLAYS = 40;
 const MAX_THUMBNAILS = 24;
 const MAX_MANIFESTS = 50;

@@ -5,7 +5,7 @@ import { createLimiter } from '../utils/limiter.js';
 import { classify, ttlFor, type AccessStatus } from './classification-engine.js';
 import type { OoniLookup } from './ooni-service.js';
 import type { NetworkResult } from './network-aggregate.js';
-import type { Probe } from './pakistan-probe.js';
+import type { Probe } from './network-probe.js';
 
 export interface CheckResult {
   domain: string;
@@ -36,7 +36,7 @@ interface Dependencies {
   onError?: (error: unknown, domain: string) => void;
 }
 
-const METHOD = 'DNS + HTTPS/HTTP probe from Pakistan, cross-checked with OONI';
+const METHOD = 'DNS + HTTPS/HTTP test from a local network, cross-checked with OONI';
 const FAILURE_TTL_SECONDS = 60;
 const PENDING_TTL_SECONDS = 30;
 const DEFAULT_REQUEST_BUDGET_MS = 30_000;

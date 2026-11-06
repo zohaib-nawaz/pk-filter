@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
+import { brandHtml } from '../brand/brand.mjs';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
@@ -7,7 +8,7 @@ export default defineConfig({
   root: resolve(import.meta.dirname, 'src'),
   base: '/',
   publicDir: false,
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), brandHtml()],
   build: {
     outDir: resolve(import.meta.dirname, 'dist'),
     emptyOutDir: false,

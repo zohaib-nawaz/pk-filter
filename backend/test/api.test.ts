@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { nullRepository } from '../src/database/repository.js';
 import { createAccessibilityService } from '../src/services/accessibility-service.js';
-import type { ProbeMeasurement } from '../src/services/pakistan-probe.js';
+import type { ProbeMeasurement } from '../src/services/network-probe.js';
 
-const network = { country: 'PK', isp: 'Test', asn: 'AS1', city: 'Lahore' };
+const network = { country: 'NL', isp: 'Test', asn: 'AS1', city: 'River City' };
 
 function fakeProbe() {
   return vi.fn(async (domain: string): Promise<ProbeMeasurement> => ({
@@ -37,12 +37,12 @@ describe('POST /api/v1/check', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/check',
-      payload: { domains: ['example.com', 'www.example.com', 'localhost', '10.0.0.1'], country: 'PK' },
+      payload: { domains: ['example.com', 'www.example.com', 'localhost', '10.0.0.1'], country: 'NL' },
     });
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.results).toHaveLength(1);
-    expect(body.results[0]).toMatchObject({ domain: 'example.com', status: 'accessible', country: 'PK' });
+    expect(body.results[0]).toMatchObject({ domain: 'example.com', status: 'accessible', country: 'NL' });
     expect(body.rejected).toEqual(['localhost', '10.0.0.1']);
     expect(probe).toHaveBeenCalledTimes(1);
 

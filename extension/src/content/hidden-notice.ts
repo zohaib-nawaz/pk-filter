@@ -1,4 +1,5 @@
-export const NOTICE_TAG = 'pkaf-notice';
+import { brandId } from '../core/brand';
+export const NOTICE_TAG = brandId('notice');
 
 const STYLES = `
 :host { all: initial; display: block; margin: 0 0 16px; }

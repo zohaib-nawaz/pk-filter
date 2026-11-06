@@ -1,13 +1,14 @@
 import { resolve } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { brandHtml } from '../brand/brand.mjs';
 import { loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 
 const root = import.meta.dirname;
 
 const config = {
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), brandHtml()],
   resolve: { alias: { '@shared': resolve(root, '../extension/src/core') } },
   server: { port: 3180, strictPort: true, fs: { allow: [resolve(root, '..')] } },
   build: {

@@ -1,6 +1,7 @@
+import { brandId } from '../core/brand';
 import type { VideoUiState } from '../core/video-visibility';
 
-export const VIDEO_BUTTON_TAG = 'pkaf-video';
+export const VIDEO_BUTTON_TAG = brandId('video');
 
 export type VideoButtonState = Exclude<VideoUiState, 'idle'>;
 export type VideoButtonVariant = 'inline' | 'overlay';

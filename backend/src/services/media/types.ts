@@ -23,11 +23,20 @@ export interface MediaFormat {
   ref: FormatRef;
 }
 
+export interface MediaEmbed {
+  provider: 'tiktok';
+  playerUrl: string;
+  openUrl: string;
+  author: string | null;
+  authorUrl: string | null;
+}
+
 export interface MediaInspection {
   title: string;
-  source: 'file' | 'hls' | 'dash' | 'page';
+  source: 'file' | 'hls' | 'dash' | 'page' | 'tiktok';
   durationSeconds: number | null;
   thumbnail: string | null;
+  embed?: MediaEmbed;
   formats: MediaFormat[];
 }
 

@@ -1,6 +1,6 @@
 import type { HttpAttempt } from './http-checker.js';
 import type { OoniSummary } from './ooni-service.js';
-import type { ProbeMeasurement } from './pakistan-probe.js';
+import type { ProbeMeasurement } from './network-probe.js';
 
 export type AccessStatus = 'accessible' | 'blocked' | 'possibly_blocked' | 'unknown' | 'server_error';
 

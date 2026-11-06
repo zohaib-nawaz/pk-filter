@@ -7,13 +7,13 @@ import { summarizeHistory } from '../src/services/history.js';
 import { aggregateNetworks, type NetworkResult } from '../src/services/network-aggregate.js';
 import type { PeerClient } from '../src/services/peer-client.js';
 
-const network = { country: 'PK', isp: 'PTCL', asn: 'AS17557', city: 'Karachi' };
+const network = { country: 'NL', isp: 'NetOne', asn: 'AS64500', city: 'Capital City' };
 
-const result = (domain: string, status: AccessStatus, isp = 'PTCL', ttlSeconds = 1200): CheckResult => ({
+const result = (domain: string, status: AccessStatus, isp = 'NetOne', ttlSeconds = 1200): CheckResult => ({
   domain,
   status,
   confidence: status === 'blocked' ? 0.9 : 0.85,
-  country: 'PK',
+  country: 'NL',
   lastChecked: '2026-11-05T00:00:00.000Z',
   evidence: [`${isp.toLowerCase()}_${status}`],
   method: 'probe',
@@ -23,7 +23,7 @@ const result = (domain: string, status: AccessStatus, isp = 'PTCL', ttlSeconds =
 
 const net = (status: AccessStatus, isp: string): NetworkResult => ({ isp, asn: 'AS', city: 'x', status, confidence: 0.9, lastChecked: '', evidence: [] });
 
-const fixed = (map: Record<string, AccessStatus>, isp = 'PTCL'): AccessibilityService => ({
+const fixed = (map: Record<string, AccessStatus>, isp = 'NetOne'): AccessibilityService => ({
   check: async (domains) => domains.map((domain) => result(domain, map[domain] ?? 'unknown', isp)),
   drain: async () => undefined,
 });
@@ -35,21 +35,21 @@ const peer = (map: Record<string, AccessStatus>, isp: string, fail = false): Pee
     }
     return domains.map((domain) => result(domain, map[domain] ?? 'unknown', isp, 600));
   },
-  status: async () => ({ isp, asn: `AS-${isp}`, city: 'Lahore', online: !fail }),
+  status: async () => ({ isp, asn: `AS-${isp}`, city: 'River City', online: !fail }),
 });
 
 describe('aggregateNetworks', () => {
   it('keeps a single network exactly as measured', () => {
-    expect(aggregateNetworks([{ ...net('possibly_blocked', 'PTCL'), confidence: 0.55, evidence: ['dns_control_mismatch'] }])).toEqual({ status: 'possibly_blocked', confidence: 0.55, evidence: ['dns_control_mismatch'] });
+    expect(aggregateNetworks([{ ...net('possibly_blocked', 'NetOne'), confidence: 0.55, evidence: ['dns_control_mismatch'] }])).toEqual({ status: 'possibly_blocked', confidence: 0.55, evidence: ['dns_control_mismatch'] });
   });
 
   it('only calls a site blocked when every measured network blocks it', () => {
-    expect(aggregateNetworks([net('blocked', 'PTCL'), net('blocked', 'Jazz'), net('unknown', 'Zong')]).status).toBe('blocked');
-    const mixed = aggregateNetworks([net('blocked', 'PTCL'), net('accessible', 'Jazz')]);
+    expect(aggregateNetworks([net('blocked', 'NetOne'), net('blocked', 'NetTwo'), net('unknown', 'NetThree')]).status).toBe('blocked');
+    const mixed = aggregateNetworks([net('blocked', 'NetOne'), net('accessible', 'NetTwo')]);
     expect(mixed.status).toBe('possibly_blocked');
     expect(mixed.evidence[0]).toBe('blocked_on_some_networks');
-    expect(aggregateNetworks([net('accessible', 'PTCL'), net('server_error', 'Jazz')]).status).toBe('accessible');
-    expect(aggregateNetworks([net('unknown', 'PTCL'), net('unknown', 'Jazz')]).status).toBe('unknown');
+    expect(aggregateNetworks([net('accessible', 'NetOne'), net('server_error', 'NetTwo')]).status).toBe('accessible');
+    expect(aggregateNetworks([net('unknown', 'NetOne'), net('unknown', 'NetTwo')]).status).toBe('unknown');
   });
 });
 
@@ -83,7 +83,7 @@ describe('summarizeHistory', () => {
 
 async function app(options: { peers?: PeerClient[]; probeToken?: string; repository?: CheckRepository }) {
   return buildApp({
-    service: fixed({ 'dawn.com': 'accessible', 'blocked.com': 'blocked' }),
+    service: fixed({ 'newsdaily.org': 'accessible', 'blocked.com': 'blocked' }),
     network,
     ooniEnabled: false,
     persistence: false,
@@ -94,16 +94,16 @@ async function app(options: { peers?: PeerClient[]; probeToken?: string; reposit
 
 describe('multi-network API', () => {
   it('adds per-network results and survives a failing peer', async () => {
-    const server = await app({ peers: [peer({ 'dawn.com': 'accessible', 'blocked.com': 'accessible' }, 'Jazz'), peer({}, 'Zong', true)] });
-    const response = await server.inject({ method: 'POST', url: '/api/v1/check', payload: { domains: ['dawn.com', 'blocked.com'] } });
+    const server = await app({ peers: [peer({ 'newsdaily.org': 'accessible', 'blocked.com': 'accessible' }, 'NetTwo'), peer({}, 'NetThree', true)] });
+    const response = await server.inject({ method: 'POST', url: '/api/v1/check', payload: { domains: ['newsdaily.org', 'blocked.com'] } });
     const body = response.json() as { results: CheckResult[] };
     const blocked = body.results.find((item) => item.domain === 'blocked.com');
     expect(blocked?.status).toBe('possibly_blocked');
-    expect(blocked?.networks?.map((item) => `${item.isp}:${item.status}`)).toEqual(['PTCL:blocked', 'Jazz:accessible']);
+    expect(blocked?.networks?.map((item) => `${item.isp}:${item.status}`)).toEqual(['NetOne:blocked', 'NetTwo:accessible']);
     expect(blocked?.ttlSeconds).toBe(600);
-    expect(body.results.find((item) => item.domain === 'dawn.com')?.status).toBe('accessible');
+    expect(body.results.find((item) => item.domain === 'newsdaily.org')?.status).toBe('accessible');
     const status = (await server.inject({ method: 'GET', url: '/api/v1/status' })).json() as { networks: Array<{ isp: string; online: boolean }> };
-    expect(status.networks.map((item) => `${item.isp}:${item.online}`)).toEqual(['PTCL:true', 'Jazz:true', 'Zong:false']);
+    expect(status.networks.map((item) => `${item.isp}:${item.online}`)).toEqual(['NetOne:true', 'NetTwo:true', 'NetThree:false']);
   });
 
   it('works exactly as before without peers', async () => {
@@ -114,20 +114,20 @@ describe('multi-network API', () => {
   });
 
   it('only answers peer probes with the right token', async () => {
-    expect((await (await app({})).inject({ method: 'POST', url: '/api/v1/probe', payload: { domains: ['dawn.com'] } })).statusCode).toBe(404);
+    expect((await (await app({})).inject({ method: 'POST', url: '/api/v1/probe', payload: { domains: ['newsdaily.org'] } })).statusCode).toBe(404);
     const server = await app({ probeToken: 'secret-token' });
-    const denied = await server.inject({ method: 'POST', url: '/api/v1/probe', headers: { 'x-probe-token': 'nope' }, payload: { domains: ['dawn.com'] } });
+    const denied = await server.inject({ method: 'POST', url: '/api/v1/probe', headers: { 'x-probe-token': 'nope' }, payload: { domains: ['newsdaily.org'] } });
     expect(denied.statusCode).toBe(401);
-    const allowed = await server.inject({ method: 'POST', url: '/api/v1/probe', headers: { 'x-probe-token': 'secret-token' }, payload: { domains: ['www.dawn.com'] } });
-    expect(allowed.json()).toMatchObject({ results: [{ domain: 'dawn.com', status: 'accessible' }] });
+    const allowed = await server.inject({ method: 'POST', url: '/api/v1/probe', headers: { 'x-probe-token': 'secret-token' }, payload: { domains: ['www.newsdaily.org'] } });
+    expect(allowed.json()).toMatchObject({ results: [{ domain: 'newsdaily.org', status: 'accessible' }] });
   });
 
   it('reports history only when the database is available', async () => {
-    const without = (await (await app({})).inject({ method: 'GET', url: '/api/v1/history?domain=dawn.com' })).json();
-    expect(without).toMatchObject({ domain: 'dawn.com', available: false, days: [] });
+    const without = (await (await app({})).inject({ method: 'GET', url: '/api/v1/history?domain=newsdaily.org' })).json();
+    expect(without).toMatchObject({ domain: 'newsdaily.org', available: false, days: [] });
     const repository: CheckRepository = { ...nullRepository, history: async () => [{ day: '2026-11-04', status: 'blocked', lastAt: '2026-11-04T10:00:00.000' }] };
-    const withDb = (await (await app({ repository })).inject({ method: 'GET', url: '/api/v1/history?domain=https://www.dawn.com/x' })).json();
-    expect(withDb).toMatchObject({ domain: 'dawn.com', available: true, blockedSince: '2026-11-04' });
+    const withDb = (await (await app({ repository })).inject({ method: 'GET', url: '/api/v1/history?domain=https://www.newsdaily.org/x' })).json();
+    expect(withDb).toMatchObject({ domain: 'newsdaily.org', available: true, blockedSince: '2026-11-04' });
     expect((await (await app({})).inject({ method: 'GET', url: '/api/v1/history?domain=localhost' })).statusCode).toBe(400);
   });
 });

@@ -4,10 +4,10 @@ import { nullRepository } from '../src/database/repository.js';
 import { createAccessibilityService, type AccessibilityService, type CheckResult } from '../src/services/accessibility-service.js';
 import { createMultiNetworkService } from '../src/services/multi-network-service.js';
 import { createOoniService } from '../src/services/ooni-service.js';
-import type { ProbeMeasurement } from '../src/services/pakistan-probe.js';
+import type { ProbeMeasurement } from '../src/services/network-probe.js';
 import type { PeerClient } from '../src/services/peer-client.js';
 
-const network = { country: 'PK', isp: 'PTCL', asn: 'AS17557', city: 'Karachi' };
+const network = { country: 'NL', isp: 'NetOne', asn: 'AS64500', city: 'Capital City' };
 
 const measurement = (domain: string): ProbeMeasurement => ({
   domain,
@@ -23,16 +23,16 @@ const peerResult = (domain: string, ttlSeconds = 600): CheckResult => ({
   domain,
   status: 'accessible',
   confidence: 0.85,
-  country: 'PK',
+  country: 'NL',
   lastChecked: '2026-11-05T00:00:00.000Z',
   evidence: [],
   method: 'probe',
-  network: { isp: 'Jazz', asn: 'AS9', city: 'Lahore' },
+  network: { isp: 'NetTwo', asn: 'AS9', city: 'River City' },
   ttlSeconds,
 });
 
 const local: AccessibilityService = {
-  check: async (domains) => domains.map((domain) => ({ ...peerResult(domain, 1200), network: { isp: 'PTCL', asn: 'AS1', city: 'x' } })),
+  check: async (domains) => domains.map((domain) => ({ ...peerResult(domain, 1200), network: { isp: 'NetOne', asn: 'AS1', city: 'x' } })),
   drain: async () => undefined,
 };
 
@@ -79,7 +79,7 @@ describe('request budget', () => {
 describe('peer cache and breaker', () => {
   it('reuses cached peer answers and only asks for missing domains', async () => {
     const check = vi.fn(async (domains: string[]) => domains.map((domain) => peerResult(domain)));
-    const peer: PeerClient = { check, status: async () => ({ isp: 'Jazz', asn: 'AS9', city: 'Lahore', online: true }) };
+    const peer: PeerClient = { check, status: async () => ({ isp: 'NetTwo', asn: 'AS9', city: 'River City', online: true }) };
     const service = createMultiNetworkService(local, [peer]);
     await service.check(['a.com']);
     const results = await service.check(['a.com', 'b.com']);
@@ -92,7 +92,7 @@ describe('peer cache and breaker', () => {
     const check = vi.fn(async (): Promise<CheckResult[]> => {
       throw new Error('down');
     });
-    const peer: PeerClient = { check, status: async () => ({ isp: 'Jazz', asn: 'AS9', city: 'Lahore', online: false }) };
+    const peer: PeerClient = { check, status: async () => ({ isp: 'NetTwo', asn: 'AS9', city: 'River City', online: false }) };
     const service = createMultiNetworkService(local, [peer], undefined, () => time);
     for (let round = 0; round < 5; round += 1) {
       await service.check([`site${round}.com`]);
@@ -107,13 +107,13 @@ describe('peer cache and breaker', () => {
 describe('ooni pause', () => {
   it('pauses globally only on transient failures', async () => {
     const notFound = vi.fn(async () => new Response('nope', { status: 404 }));
-    const service = createOoniService({ baseUrl: 'https://api.ooni.io', country: 'PK', enabled: true, fetchFn: notFound, now: () => 0 });
+    const service = createOoniService({ baseUrl: 'https://api.ooni.io', country: 'NL', enabled: true, fetchFn: notFound, now: () => 0 });
     await service.summary('a.com');
     await service.summary('b.com');
     expect(notFound).toHaveBeenCalledTimes(4);
 
     const busy = vi.fn(async () => new Response('busy', { status: 503 }));
-    const paused = createOoniService({ baseUrl: 'https://api.ooni.io', country: 'PK', enabled: true, fetchFn: busy, now: () => 0 });
+    const paused = createOoniService({ baseUrl: 'https://api.ooni.io', country: 'NL', enabled: true, fetchFn: busy, now: () => 0 });
     await paused.summary('a.com');
     await paused.summary('b.com');
     expect(busy).toHaveBeenCalledTimes(2);

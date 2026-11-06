@@ -1,4 +1,5 @@
 import { AUTO_COUNTRY, countryName, countryOptions } from '../core/countries';
+import { BRAND } from '../core/brand';
 import { HOUR_OPTIONS } from '../core/night';
 import { CHECK_FREQUENCIES, FILTER_MODES, MAX_STREAM_DOMAINS, parseStreamDomain, STREAM_QUALITIES } from '../core/settings';
 import type { OverviewStats } from '../core/types';
@@ -23,7 +24,7 @@ function countryChoices(overview: OverviewStats | null): Array<{ value: string; 
 
 function testCountries(overview: OverviewStats | null): string {
   if (!overview || overview.service.probeCountries.length === 0) {
-    return 'Pakistan';
+    return 'your server’s country';
   }
   return overview.service.probeCountries.map(countryName).join(', ');
 }
@@ -73,7 +74,7 @@ export function App() {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-5 px-4 py-10">
       <header>
-        <h1 className="text-xl font-semibold">PK Access Filter settings</h1>
+        <h1 className="text-xl font-semibold">{BRAND.name} settings</h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
           Shows whether Google, Bing and DuckDuckGo results are blocked in your country, or the country your VPN connects through. Nothing is hidden unless you choose a filter.
         </p>

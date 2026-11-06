@@ -7,7 +7,7 @@ import type { OoniDirectory, OoniSummary } from '../src/services/ooni-service.js
 import type { PeerClient } from '../src/services/peer-client.js';
 import { createCountryResolver } from '../src/services/viewer-country.js';
 
-const network = { country: 'PK', isp: 'PTCL', asn: 'AS17557', city: 'Karachi' };
+const network = { country: 'NL', isp: 'NetOne', asn: 'AS64500', city: 'Capital City' };
 
 const counts = (ok: number, anomalies: number, confirmed: number, failures: number) => ({ measurements: ok + anomalies + confirmed + failures, anomalies, confirmed, failures, ok });
 
@@ -26,7 +26,7 @@ const local: AccessibilityService = {
       domain,
       status: 'blocked',
       confidence: 0.9,
-      country: 'PK',
+      country: 'NL',
       lastChecked: '2026-11-05T00:00:00.000Z',
       evidence: ['blockpage_detected'],
       method: 'probe',
@@ -62,18 +62,18 @@ describe('classifyFromOoni', () => {
 
 describe('viewer country', () => {
   it('prefers the chosen country, then the proxy header, then GeoIP, then the default', () => {
-    const resolve = createCountryResolver({ geoip, fallback: 'PK', trustCountryHeader: true });
+    const resolve = createCountryResolver({ geoip, fallback: 'NL', trustCountryHeader: true });
     expect(resolve({ requested: 'de', ip: '5.62.0.1', headerCountry: 'IR' })).toEqual({ country: 'DE', source: 'chosen' });
     expect(resolve({ requested: 'auto', ip: '85.214.132.117', headerCountry: 'IR' })).toEqual({ country: 'IR', source: 'ip' });
     expect(resolve({ requested: 'auto', ip: '85.214.132.117', headerCountry: 'XX' })).toEqual({ country: 'DE', source: 'ip' });
-    expect(resolve({ requested: undefined, ip: '127.0.0.1', headerCountry: undefined })).toEqual({ country: 'PK', source: 'default' });
-    const untrusted = createCountryResolver({ geoip, fallback: 'PK', trustCountryHeader: false });
-    expect(untrusted({ requested: undefined, ip: '127.0.0.1', headerCountry: 'IR' }).country).toBe('PK');
+    expect(resolve({ requested: undefined, ip: '127.0.0.1', headerCountry: undefined })).toEqual({ country: 'NL', source: 'default' });
+    const untrusted = createCountryResolver({ geoip, fallback: 'NL', trustCountryHeader: false });
+    expect(untrusted({ requested: undefined, ip: '127.0.0.1', headerCountry: 'IR' }).country).toBe('NL');
   });
 });
 
 describe('country routing', () => {
-  it('answers from the VPN country with OONI data and keeps Pakistan on the probe', async () => {
+  it('answers from the VPN country with OONI data and keeps Netherlands on the probe', async () => {
     const server = await app();
     const germany = await server.inject({
       method: 'POST',
@@ -84,8 +84,8 @@ describe('country routing', () => {
     expect(germany.json()).toMatchObject({ country: 'DE', countrySource: 'ip', measuredBy: 'ooni', results: [{ status: 'accessible', country: 'DE' }] });
     const iran = await server.inject({ method: 'POST', url: '/api/v1/check', headers: { 'x-forwarded-for': '5.62.0.1' }, payload: { domains: ['example.com'] } });
     expect(iran.json()).toMatchObject({ country: 'IR', results: [{ status: 'blocked' }] });
-    const pakistan = await server.inject({ method: 'POST', url: '/api/v1/check', payload: { domains: ['example.com'], country: 'PK' } });
-    expect(pakistan.json()).toMatchObject({ country: 'PK', measuredBy: 'probe', results: [{ evidence: ['blockpage_detected'] }] });
+    const home = await server.inject({ method: 'POST', url: '/api/v1/check', payload: { domains: ['example.com'], country: 'NL' } });
+    expect(home.json()).toMatchObject({ country: 'NL', measuredBy: 'probe', results: [{ evidence: ['blockpage_detected'] }] });
     const where = await server.inject({ method: 'GET', url: '/api/v1/whereami', headers: { 'x-forwarded-for': '85.214.132.117' } });
     expect(where.json()).toEqual({ country: 'DE', source: 'ip', measuredBy: 'ooni' });
   });

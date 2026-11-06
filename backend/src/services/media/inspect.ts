@@ -4,6 +4,7 @@ import { isRestrictedHost } from '../../../../extension/src/core/restricted-site
 import { createLimiter } from '../../utils/limiter.js';
 import { expectOk, fetchText, MediaFetchError, openSafe, readBody, safeMediaUrl, type SafeResponse } from './safe-http.js';
 import { pageMediaSources, pageThumbnail, pageTitle } from './page-sources.js';
+import { isTikTokUrl, tiktokInspection } from './tiktok.js';
 import { MediaUnavailable, type MediaFormat, type MediaInspection } from './types.js';
 
 const TEXT_LIMIT = 4 * 1024 * 1024;
@@ -361,6 +362,9 @@ export async function inspectMediaUrl(url: string): Promise<MediaInspection> {
   const safe = safeMediaUrl(url);
   if (!safe) {
     throw new MediaFetchError('invalid_url', 'Only public http and https links are supported');
+  }
+  if (isTikTokUrl(safe)) {
+    return tiktokInspection(safe.toString());
   }
   const inspection = await inspectAt(safe.toString(), 0);
   return { ...inspection, formats: dedupe(inspection.formats) };

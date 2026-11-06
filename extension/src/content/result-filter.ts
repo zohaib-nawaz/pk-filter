@@ -1,5 +1,6 @@
-const HIDDEN_ATTRIBUTE = 'data-pkaf-hidden';
-const STYLE_ID = 'pkaf-filter-style';
+import { brandId } from '../core/brand';
+const HIDDEN_ATTRIBUTE = `data-${brandId('hidden')}`;
+const STYLE_ID = brandId('filter-style');
 
 function ensureStyle(): void {
   if (document.getElementById(STYLE_ID)) {

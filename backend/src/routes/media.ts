@@ -187,6 +187,7 @@ export const mediaRoutes: FastifyPluginAsync<MediaRouteOptions> = async (app, op
         source: inspection.source,
         durationSeconds: inspection.durationSeconds,
         thumbnail: inspection.thumbnail ? sign({ kind: 'thumbnail', url: inspection.thumbnail, referer: pageUrl }, inspection.title) : null,
+        embed: inspection.embed ? inspection.embed : null,
         preview: preview ? { token: sign(preview.ref, inspection.title), audioOnly: preview.audio === 'only' } : null,
         formats,
       };

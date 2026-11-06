@@ -166,7 +166,7 @@ export const FAQ: Question[] = [
   {
     question: 'Which countries are supported?',
     answer:
-      'All of them. Pakistan has live test servers on local ISPs; any country can add one. Elsewhere, results come from OONI volunteer measurements and your own connection.',
+      'All of them. Countries with a test server get live tests on local networks, and any country can add one. Elsewhere, results come from OONI volunteer measurements and your own connection.',
   },
 ];
 
@@ -178,7 +178,7 @@ export const DOWNLOAD_SUPPORT = [
 ];
 
 export const DOWNLOAD_LIMITS = [
-  'YouTube, Facebook, Instagram, TikTok, X, Vimeo and other platforms that do not allow downloads.',
+  'Downloads from YouTube, Facebook, Instagram, TikTok, X, Vimeo and other platforms that do not allow them. TikTok links show the video in TikTok’s own player instead.',
   'Netflix and any DRM-protected or encrypted video.',
   'Adult video sites.',
   'Live streams, and videos larger than the server limit.',

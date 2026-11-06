@@ -1,3 +1,4 @@
+import { brandId } from '../core/brand';
 import { errorMessage } from '../core/errors';
 import { createLimiter } from '../core/limiter';
 import type { DownloadResult, ScheduleResult } from '../core/messages';
@@ -6,7 +7,7 @@ import type { DownloadOptions, ScheduledDownload } from '../core/types';
 import { NIGHT_QUEUE_KEY, readScheduled } from '../shared/night-client';
 import { loadSettings } from '../shared/storage';
 
-const ALARM = 'pkaf-night-downloads';
+const ALARM = brandId('night-downloads');
 const MAX_QUEUE = 50;
 const queue = createLimiter(1);
 let watching = false;

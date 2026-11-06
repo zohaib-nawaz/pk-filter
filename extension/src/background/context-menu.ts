@@ -1,8 +1,9 @@
+import { brandId } from '../core/brand';
 import { domainFromUrl } from '../core/site-view';
 import { siteReportQuery } from '../core/site-report';
 
-const LINK_ITEM = 'pkaf-check-link';
-const PAGE_ITEM = 'pkaf-check-page';
+const LINK_ITEM = brandId('check-link');
+const PAGE_ITEM = brandId('check-page');
 const WINDOW_SIZE = { width: 400, height: 560 };
 let watching = false;
 

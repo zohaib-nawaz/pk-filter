@@ -24,9 +24,10 @@ describe('http checker safety', () => {
 });
 
 describe('detectBlockpage', () => {
-  it('matches the pakistani blockpage wording only', () => {
-    expect(detectBlockpage('<h1>Surf Safely!</h1><p>This website contains content that is not allowed for viewing from within Pakistan.</p>')).toBe(true);
-    expect(detectBlockpage('<title>Pakistan Telecommunication Authority</title>')).toBe(false);
+  it('matches block pages by their wording, not by country', () => {
+    expect(detectBlockpage('<h1>Surf Safely!</h1><p>This website contains content that is not allowed for viewing from within this country.</p>')).toBe(true);
+    expect(detectBlockpage('<p>This site has been blocked as per the instructions of the Telecommunication Authority.</p>')).toBe(true);
+    expect(detectBlockpage('<title>Telecommunication Authority</title>')).toBe(false);
     expect(detectBlockpage('<h1>Welcome</h1>')).toBe(false);
   });
 });

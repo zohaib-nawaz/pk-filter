@@ -1,3 +1,5 @@
+import { BRAND } from '@shared/brand';
+import { TIKTOK_PERMISSION_URL } from '../core/config';
 import { Logo } from './Icon';
 
 interface SiteFooterProps {
@@ -12,7 +14,7 @@ export function SiteFooter({ repoUrl, issuesUrl }: SiteFooterProps) {
         <div className="flex max-w-sm flex-col gap-2">
           <span className="flex items-center gap-2 font-semibold text-neutral-900 dark:text-neutral-100">
             <Logo className="h-6 w-6" />
-            PK Access Filter
+            {BRAND.name}
           </span>
           <p>
             Measurements cross-checked with{' '}
@@ -35,6 +37,9 @@ export function SiteFooter({ repoUrl, issuesUrl }: SiteFooterProps) {
           </a>
           <a href={issuesUrl} className="hover:text-neutral-900 dark:hover:text-white">
             Report a problem
+          </a>
+          <a href={TIKTOK_PERMISSION_URL} className="hover:text-neutral-900 dark:hover:text-white">
+            TikTok permission
           </a>
         </nav>
       </div>

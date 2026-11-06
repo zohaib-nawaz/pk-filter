@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import type { VideoPreview as Preview } from '../core/media-api';
+import type { VideoEmbed, VideoPreview as Preview } from '../core/media-api';
 
 interface VideoPreviewProps {
   title: string;
   summary: string;
   bestQuality: string | null;
   preview: Preview;
+  embed: VideoEmbed | null;
 }
 
 const FRAME = 'relative aspect-video w-full overflow-hidden rounded-xl bg-neutral-100 dark:bg-neutral-800';
@@ -59,7 +60,26 @@ function Player({ preview, thumbnail, title }: { preview: Preview; thumbnail: st
   );
 }
 
-function renderMedia(preview: Preview, thumbnail: string | null, title: string, onFail: () => void) {
+function EmbeddedPlayer({ embed, title }: { embed: VideoEmbed; title: string }) {
+  return (
+    <div className="mx-auto aspect-[9/16] w-full max-w-[20rem] overflow-hidden rounded-xl bg-black">
+      <iframe
+        src={embed.playerUrl}
+        title={`TikTok player: ${title}`}
+        className="h-full w-full"
+        allow="encrypted-media; fullscreen; picture-in-picture"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+        referrerPolicy="strict-origin-when-cross-origin"
+        loading="lazy"
+      />
+    </div>
+  );
+}
+
+function renderMedia(preview: Preview, embed: VideoEmbed | null, thumbnail: string | null, title: string, onFail: () => void) {
+  if (embed) {
+    return <EmbeddedPlayer embed={embed} title={title} />;
+  }
   if (preview.mediaUrl) {
     return <Player preview={preview} thumbnail={thumbnail} title={title} />;
   }
@@ -76,12 +96,12 @@ function renderQuality(bestQuality: string | null) {
   return <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">Up to {bestQuality}</span>;
 }
 
-export function VideoPreview({ title, summary, bestQuality, preview }: VideoPreviewProps) {
+export function VideoPreview({ title, summary, bestQuality, preview, embed }: VideoPreviewProps) {
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const thumbnail = thumbnailFailed ? null : preview.thumbnailUrl;
   return (
     <section className="grid gap-5 rounded-2xl border border-neutral-200 bg-white p-5 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] dark:border-neutral-800 dark:bg-neutral-900" aria-label="Video preview">
-      {renderMedia(preview, thumbnail, title, () => setThumbnailFailed(true))}
+      {renderMedia(preview, embed, thumbnail, title, () => setThumbnailFailed(true))}
       <div className="flex min-w-0 flex-col justify-center gap-2">
         <h2 className="text-lg font-semibold break-words">{title}</h2>
         <p className="text-sm text-neutral-500 dark:text-neutral-400">{summary}</p>

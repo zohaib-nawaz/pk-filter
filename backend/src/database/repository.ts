@@ -1,7 +1,7 @@
 import pg from 'pg';
 import type { AccessStatus, Evidence } from '../services/classification-engine.js';
 import type { HistoryRow } from '../services/history.js';
-import type { ProbeMeasurement } from '../services/pakistan-probe.js';
+import type { ProbeMeasurement } from '../services/network-probe.js';
 
 export interface CheckRecord {
   domain: string;

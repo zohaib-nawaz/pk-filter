@@ -1,4 +1,4 @@
-import { AUTO_COUNTRY, DEFAULT_COUNTRY, isCountryCode } from '../core/countries';
+import { AUTO_COUNTRY, isCountryCode } from '../core/countries';
 import type { ViewerCountry } from '../core/types';
 import { loadSettings, requestRefresh } from '../shared/storage';
 import { browserCountry, whereAmI } from './api-client';
@@ -19,12 +19,12 @@ export async function storedViewer(): Promise<ViewerCountry | null> {
 
 function fallbackFor(choice: string, previous: ViewerCountry | null): ViewerCountry {
   if (choice !== AUTO_COUNTRY) {
-    return { country: choice, source: 'chosen', measuredBy: choice === DEFAULT_COUNTRY ? 'probe' : 'ooni' };
+    return { country: choice, source: 'chosen', measuredBy: 'ooni' };
   }
   if (previous) {
     return previous;
   }
-  return { country: DEFAULT_COUNTRY, source: 'default', measuredBy: 'probe' };
+  return { country: AUTO_COUNTRY, source: 'default', measuredBy: 'ooni' };
 }
 
 async function detect(choice: string): Promise<ViewerCountry | null> {
@@ -40,7 +40,7 @@ async function detect(choice: string): Promise<ViewerCountry | null> {
   if (confirmed) {
     return { ...confirmed, source: 'ip' };
   }
-  return { country: local, source: 'ip', measuredBy: local === DEFAULT_COUNTRY ? 'probe' : 'ooni' };
+  return { country: local, source: 'ip', measuredBy: 'ooni' };
 }
 
 async function resolve(choice: string): Promise<ViewerCountry> {

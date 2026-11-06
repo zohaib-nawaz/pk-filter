@@ -40,7 +40,7 @@ export function HomePage() {
             </p>
             <h1 className="mt-6 text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">Know which sites are blocked before you click.</h1>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-neutral-600 dark:text-neutral-300">
-              Badges on Google, Bing and DuckDuckGo show whether each result opens in Pakistan, or wherever your VPN connects. Measured on real networks, cross-checked with OONI.
+              Badges on Google, Bing and DuckDuckGo show whether each result opens in your country, or wherever your VPN connects. Measured on real networks, cross-checked with OONI.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a href="#install" className="rounded-xl bg-emerald-600 px-5 py-3 text-base font-semibold text-white shadow-sm hover:bg-emerald-700">

@@ -1,3 +1,4 @@
+import { BRAND } from '../core/brand';
 import { countryName } from '../core/countries';
 import { describeFailure } from '../core/net-errors';
 import { parseSiteReport, type SiteReportParams } from '../core/site-report';
@@ -66,7 +67,7 @@ function Report({ report }: { report: SiteReportParams }) {
     <main className="mx-auto flex max-w-md flex-col gap-4 px-4 py-8">
       <header className="flex items-center gap-2.5">
         <img src="/icons/icon-32.png" alt="" className="h-6 w-6" />
-        <span className="text-sm font-semibold">PK Access Filter</span>
+        <span className="text-sm font-semibold">{BRAND.name}</span>
       </header>
       <section className="flex flex-col gap-1.5">
         <h1 className="break-words text-lg font-semibold">{heading(report, site.state)}</h1>

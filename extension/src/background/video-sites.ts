@@ -1,16 +1,17 @@
+import { brandId } from '../core/brand';
 import { SEARCH_PAGE_MATCHES, WEB_ORIGINS } from '../core/constants';
+import { isSearchPageUrl } from '../core/search-sites';
 import { hasDownloaderPermissions } from '../shared/permissions';
 import { loadSettings } from '../shared/storage';
 
-const SCRIPT_ID = 'pkaf-video-pages';
+const SCRIPT_ID = brandId('video-pages');
 const SCRIPT_FILE = 'video.js';
-const SEARCH_PAGE = /^https:\/\/((www\.)?google\.com(\.pk)?\/search|www\.bing\.com\/search|duckduckgo\.com\/)/;
 
 async function injectIntoOpenTabs(): Promise<void> {
   const tabs = await chrome.tabs.query({ url: WEB_ORIGINS });
   await Promise.all(
     tabs
-      .filter((tab) => tab.id !== undefined && !SEARCH_PAGE.test(tab.url ?? ''))
+      .filter((tab) => tab.id !== undefined && !isSearchPageUrl(tab.url || ''))
       .map((tab) =>
         chrome.scripting.executeScript({ target: { tabId: tab.id as number }, files: [SCRIPT_FILE] }).catch(() => undefined),
       ),

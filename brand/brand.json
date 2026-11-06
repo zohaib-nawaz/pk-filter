@@ -1,0 +1,7 @@
+{
+  "name": "NETVRON",
+  "slug": "netvron",
+  "tagline": "See which sites are blocked before you click",
+  "description": "Shows which Google, Bing and DuckDuckGo results open in your country or wherever your VPN connects, explains sites that fail to load and downloads direct video files.",
+  "addonId": "netvron@zohaib-nawaz"
+}

@@ -13,7 +13,7 @@ describe('domain extraction', () => {
     expect(domainFromHref('/url?q=https://news.ycombinator.com/item&sa=U', BASE)).toBe('news.ycombinator.com');
     expect(domainFromHref('/goto?url=CAESagHrOzAV', BASE)).toBeNull();
     expect(domainFromHref('https://maps.google.com/x', BASE)).toBeNull();
-    expect(domainFromDisplayedUrl('https://en.wikipedia.org › wiki › Pakistan')).toBe('en.wikipedia.org');
+    expect(domainFromDisplayedUrl('https://en.wikipedia.org › wiki › Netherlands')).toBe('en.wikipedia.org');
     expect(domainFromDisplayedUrl('1.7K+ views · 9 years ago')).toBeNull();
     expect(domainFromSiteName('YouTube · DW News')).toBe('youtube.com');
     expect(domainFromSiteName('Some Blog')).toBeNull();
@@ -22,7 +22,7 @@ describe('domain extraction', () => {
   it('rejects invalid hosts', () => {
     expect(normalizeDomain('localhost')).toBeNull();
     expect(normalizeDomain('192.168.1.1')).toBeNull();
-    expect(normalizeDomain('WWW.Dawn.com')).toBe('dawn.com');
+    expect(normalizeDomain('WWW.NewsDaily.org')).toBe('newsdaily.org');
   });
 });
 

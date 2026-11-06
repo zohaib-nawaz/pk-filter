@@ -3,9 +3,9 @@ import { classify } from '../src/services/classification-engine.js';
 import type { DnsResult } from '../src/services/dns-checker.js';
 import type { HttpAttempt } from '../src/services/http-checker.js';
 import type { OoniCounts, OoniSummary } from '../src/services/ooni-service.js';
-import type { ProbeMeasurement } from '../src/services/pakistan-probe.js';
+import type { ProbeMeasurement } from '../src/services/network-probe.js';
 
-const network = { country: 'PK', isp: 'Test', asn: 'AS1', city: 'Lahore' };
+const network = { country: 'NL', isp: 'Test', asn: 'AS1', city: 'River City' };
 
 const dnsOk: DnsResult = {
   host: 'example.com',
@@ -73,7 +73,7 @@ describe('classify', () => {
     expect(classify(measure({ https: attempt({ status: 500 }) }), null).status).toBe('server_error');
   });
 
-  it('flags a pakistani blockpage as blocked', () => {
+  it('flags a government block page as blocked', () => {
     const result = classify(
       measure({ https: failed('https', 'reset'), http: attempt({ scheme: 'http', blockpage: true }) }),
       null,

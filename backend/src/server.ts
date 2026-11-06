@@ -6,9 +6,15 @@ import { createPgRepository, nullRepository, type CheckRepository } from './data
 import { createAccessibilityService } from './services/accessibility-service.js';
 import { openGeoIp } from './services/geoip.js';
 import { createOoniDirectory } from './services/ooni-service.js';
-import { createPakistanProbe } from './services/pakistan-probe.js';
+import { createNetworkProbe } from './services/network-probe.js';
 import { createDownloadSlots } from './services/media/slots.js';
 import { createPeerClient, type PeerClient } from './services/peer-client.js';
+import { countryCode } from './utils/country.js';
+
+if (!countryCode(config.network.country)) {
+  console.error('PROBE_COUNTRY must be the two-letter code of the country this server runs in (for example DE or US)');
+  process.exit(1);
+}
 
 const PRUNE_INTERVAL_MS = 6 * 3_600_000;
 
@@ -42,7 +48,7 @@ for (const peer of config.peerProbes) {
 let logCheckFailure: (error: unknown, domain: string) => void = () => undefined;
 
 const service = createAccessibilityService({
-  probe: createPakistanProbe(config.network),
+  probe: createNetworkProbe(config.network),
   ooni: ooni.forCountry(config.network.country),
   repository,
   network: config.network,

@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { brandId } from '../src/core/brand';
+
+const VIDEO_TAG = brandId('video');
+const TAKEOVER = brandId('video-takeover');
 
 type Message = { type: string; url?: string; videos?: Array<{ url: string; title?: string }> };
 
@@ -45,7 +49,7 @@ function retire() {
   if (stub.chrome) {
     stub.chrome.runtime.id = undefined;
   }
-  document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
+  document.dispatchEvent(new CustomEvent(TAKEOVER));
 }
 
 afterEach(() => {
@@ -73,7 +77,7 @@ describe('video page detection', () => {
       'https://cdn.example.com/b.mp4',
       'https://cdn.example.com/c.mp4',
     ]);
-    expect(document.querySelectorAll('pkaf-video')).toHaveLength(5);
+    expect(document.querySelectorAll(VIDEO_TAG)).toHaveLength(5);
 
     retire();
   });
@@ -92,10 +96,10 @@ describe('video page detection', () => {
     const last = messages.filter((m) => m.type === 'page-videos').at(-1);
     expect(last?.videos?.map((video) => video.url).sort()).toEqual(['https://cdn.example.com/episode.mp3', 'https://cdn.example.com/full.mp4']);
 
-    document.dispatchEvent(new CustomEvent('pkaf-video-takeover'));
-    expect(document.querySelectorAll('pkaf-video')).toHaveLength(2);
+    document.dispatchEvent(new CustomEvent(TAKEOVER));
+    expect(document.querySelectorAll(VIDEO_TAG)).toHaveLength(2);
     retire();
-    expect(document.querySelectorAll('pkaf-video')).toHaveLength(0);
+    expect(document.querySelectorAll(VIDEO_TAG)).toHaveLength(0);
   });
 
   it('puts one download icon on a video thumbnail, preferring the large file', async () => {
@@ -113,13 +117,13 @@ describe('video page detection', () => {
     expect(messages.filter((m) => m.type === 'inspect-media').map((m) => m.url)).toEqual(['https://cdn.example.com/large-1.mp4']);
     expect(messages.filter((m) => m.type === 'page-videos').at(-1)?.videos?.map((video) => video.url)).toEqual(['https://cdn.example.com/large-1.mp4']);
     expect(messages.filter((m) => m.type === 'page-videos').at(-1)?.videos?.[0]).toMatchObject({ title: 'Animated onboarding flow' });
-    expect(document.querySelectorAll('pkaf-video')).toHaveLength(1);
+    expect(document.querySelectorAll(VIDEO_TAG)).toHaveLength(1);
 
     const hoverVideo = document.createElement('video');
     hoverVideo.src = 'https://cdn.example.com/large-1.mp4';
     document.querySelector('.shot')?.append(hoverVideo);
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    expect(document.querySelectorAll('pkaf-video')).toHaveLength(1);
+    expect(document.querySelectorAll(VIDEO_TAG)).toHaveLength(1);
 
     retire();
   });

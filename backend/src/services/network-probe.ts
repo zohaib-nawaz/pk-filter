@@ -30,7 +30,7 @@ function reached(attempt: HttpAttempt): boolean {
   return attempt.status !== null && !attempt.blockpage;
 }
 
-export function createPakistanProbe(network: ProbeNetwork): Probe {
+export function createNetworkProbe(network: ProbeNetwork): Probe {
   return async (domain) => {
     const dns = await resolveTarget(domain);
     const addresses = [...dns.a, ...dns.aaaa];

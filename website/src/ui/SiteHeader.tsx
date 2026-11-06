@@ -1,3 +1,4 @@
+import { BRAND } from '@shared/brand';
 import type { NavLink } from '../core/content';
 import { Logo } from './Icon';
 
@@ -12,7 +13,7 @@ export function SiteHeader({ links, repoUrl }: SiteHeaderProps) {
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <a href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
           <Logo className="h-7 w-7" />
-          <span>PK Access Filter</span>
+          <span>{BRAND.name}</span>
         </a>
         <nav aria-label="Main" className="hidden items-center gap-7 text-sm text-neutral-600 md:flex dark:text-neutral-300">
           {links.map((link) => (

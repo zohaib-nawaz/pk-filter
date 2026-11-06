@@ -35,7 +35,7 @@ export const config = {
   trustProxy: process.env.TRUST_PROXY === 'true',
   logLevel: process.env.LOG_LEVEL ?? 'info',
   network: {
-    country: (process.env.PROBE_COUNTRY ?? 'PK').toUpperCase(),
+    country: (process.env.PROBE_COUNTRY ?? '').trim().toUpperCase(),
     isp: process.env.PROBE_ISP ?? 'unknown',
     asn: process.env.PROBE_ASN ?? 'unknown',
     city: process.env.PROBE_CITY ?? 'unknown',

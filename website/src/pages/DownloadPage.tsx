@@ -1,11 +1,27 @@
 import { useState, type FormEvent } from 'react';
-import { bestQuality, formatRows, lookupSummary } from '../core/media-api';
+import { TIKTOK_PERMISSION_URL } from '../core/config';
+import { bestQuality, formatRows, lookupSummary, type VideoLookup } from '../core/media-api';
 import { DOWNLOAD_LIMITS, DOWNLOAD_SUPPORT } from '../core/content';
 import { useVideoLookup, type VideoLookupState } from '../hooks/useVideoLookup';
 import { FormatList } from '../ui/FormatList';
+import { TikTokNotice } from '../ui/TikTokNotice';
 import { VideoPreview } from '../ui/VideoPreview';
 
 const FIELD = 'min-w-0 flex-1 rounded-xl border border-neutral-300 bg-white px-4 py-3 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 dark:border-neutral-700 dark:bg-neutral-900';
+
+function renderChoices(lookup: VideoLookup) {
+  if (lookup.embed && lookup.formats.length === 0) {
+    return <TikTokNotice embed={lookup.embed} permissionUrl={TIKTOK_PERMISSION_URL} />;
+  }
+  return (
+    <>
+      <FormatList heading="Choose a quality" rows={formatRows(lookup)} />
+      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        Download links work for 6 hours. Direct files can be resumed from your browser’s downloads list if the connection drops.
+      </p>
+    </>
+  );
+}
 
 function renderState(state: VideoLookupState) {
   if (state.phase === 'looking') {
@@ -32,11 +48,9 @@ function renderState(state: VideoLookupState) {
           summary={lookupSummary(state.lookup)}
           bestQuality={bestQuality(state.lookup)}
           preview={state.lookup.preview}
+          embed={state.lookup.embed}
         />
-        <FormatList heading="Choose a quality" rows={formatRows(state.lookup)} />
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          Download links work for 6 hours. Direct files can be resumed from your browser’s downloads list if the connection drops.
-        </p>
+        {renderChoices(state.lookup)}
       </div>
     );
   }

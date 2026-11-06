@@ -1,13 +1,17 @@
-# PK Access Filter
+# NETVRON
 
-A Chrome extension that marks each Google Search result as **Accessible**, **Blocked**, **Possibly blocked**, **Unknown** or **Server error** from Pakistan (or from whichever country you, or your VPN, are in), and can hide results with confirmed blocking evidence.
+A Chrome extension that marks each Google Search result as **Accessible**, **Blocked**, **Possibly blocked**, **Unknown** or **Server error** in your country (or wherever your VPN connects), and can hide results with confirmed blocking evidence.
 
 It is an accessibility checker, not a VPN or proxy. Nothing is hidden unless the user picks a filter.
+
+## Brand
+
+The product name, tagline, store description and add-on id live in one file, `brand/brand.json`. The extension manifest, popup, settings and site pages, the website's header, footer and page titles, and the packaged zip names (`netvron-chrome.zip`, `netvron-firefox.zip`) all read it: code imports `extension/src/core/brand.ts`, build scripts use `brand/brand.mjs`, and HTML pages use `%BRAND_NAME%`, `%BRAND_TAGLINE%` and `%BRAND_DESCRIPTION%`, which the build replaces. To rename the product, edit `brand/brand.json` and rebuild.
 
 ## How it works
 
 ```
-Google Search page                Chrome extension                     Backend on a Pakistan VPS
+Google Search page                Chrome extension                     Backend on a local VPS  
 ──────────────────                ────────────────                     ─────────────────────────
 content.js  ── domains ──▶  background.js (cache, batching,  ── POST /api/v1/check ──▶  Fastify API
   badges, filter, notice        backoff, chrome.storage)                                 ├─ DNS check (system resolver + DoH control)
@@ -17,15 +21,15 @@ popup / options (React + Tailwind) ◀── chrome.storage.sync ──▶ setti
                                                                                          └─ Postgres (optional) evidence history
 ```
 
-The backend runs **on the Pakistan VPS itself**, so its DNS and HTTP checks are the Pakistan probe. No separate probe service is needed.
+The backend runs **on a VPS inside the country it measures**, so its DNS and HTTP checks are that country's probe. No separate probe service is needed.
 
 ### Classification rules
 
 | Status | When |
 |---|---|
-| Blocked | Pakistani block page seen, or live failure + OONI confirmed blocking in the last 7 days, or live interference + ≥70% OONI anomalies (≥5 measurements) |
+| Blocked | Government block page seen, or live failure + OONI confirmed blocking in the last 7 days, or live interference + ≥70% OONI anomalies (≥5 measurements) |
 | Possibly blocked | DNS manipulation (local answer missing/private while an independent DoH resolver has a public answer), HTTPS reset, HTTP 451, or ≥50% recent OONI anomalies |
-| Accessible | Site answered from Pakistan (2xx/3xx, also 401/403/404, since the site responded) |
+| Accessible | Site answered from the probe's country (2xx/3xx, also 401/403/404, since the site responded) |
 | Server error | Site answered with 5xx |
 | Unknown | Timeouts, TLS errors, domain missing everywhere, no data |
 
@@ -37,15 +41,15 @@ Cache durations: accessible 20 min, blocked / possibly blocked 15 min, server er
 
 - **Google, Bing and DuckDuckGo** results all get badges and filtering. Bing's `bing.com/ck/a` redirect links are decoded (`u=a1…`), falling back to the displayed URL.
 - **Popup → This site** shows the open tab's status (needs only `activeTab`), when it was checked, each ISP's result, the last 30 days of history and, for blocked sites, an archived copy (web.archive.org) and the OONI Explorer evidence page. Clicking a blocked badge in search results also opens the archived copy.
-- **Several ISPs.** Run the same backend on VPSes in other Pakistani networks (each with its own `PROBE_ISP`/`PROBE_ASN` and the same `PROBE_TOKEN`), then list them on the main server in `PEER_PROBES=https://jazz-probe.example.com,https://zong-probe.example.com`. The main server asks every peer through the token-protected `POST /api/v1/probe`, returns `networks` per result, and combines them: blocked only when every measured network blocks the site, "possibly blocked (some ISPs)" when they disagree. With no peers the API answers exactly as before.
+- **Several ISPs.** Run the same backend on VPSes on other networks in the same country (each with its own `PROBE_ISP`/`PROBE_ASN` and the same `PROBE_TOKEN`), then list them on the main server in `PEER_PROBES=https://nettwo-probe.example.com,https://netthree-probe.example.com`. The main server asks every peer through the token-protected `POST /api/v1/probe`, returns `networks` per result, and combines them: blocked only when every measured network blocks the site, "possibly blocked (some ISPs)" when they disagree. With no peers the API answers exactly as before.
 - **Settings → Measurement network** lets users follow one ISP's result instead of the combined one.
 - **History** comes from `GET /api/v1/history?domain=…` (last 30 days, worst status per day, and `blockedSince` for the current blocking streak). It needs `DATABASE_URL`; without a database the popup simply hides the history strip.
 
 ## Any country, VPN included
 
 - **Settings → Country** is **Automatic** by default. The backend works out the country from the request's IP address (a `CF-IPCountry` header when `TRUST_PROXY=true` behind Cloudflare, otherwise a local DB-IP country database), so turning on a VPN switches the country to the VPN's exit country. Users can also pick a country by hand.
-- **Pakistan** (the probe's own `PROBE_COUNTRY`) works exactly as before: live DNS/HTTP probe plus OONI.
-- **A country with its own test server**: add it to `PEER_PROBES` with a country prefix, for example `PEER_PROBES=https://jazz-probe.example.com,DE=https://de-probe.example.com`. Entries without a prefix are other ISPs in the main country. If that server is down, OONI reports are used.
+- **The probe's own country** (`PROBE_COUNTRY`) gets the live DNS/HTTP probe plus OONI.
+- **A country with its own test server**: add it to `PEER_PROBES` with a country prefix, for example `PEER_PROBES=https://nettwo-probe.example.com,DE=https://de-probe.example.com`. Entries without a prefix are other ISPs in the main country. If that server is down, OONI reports are used.
 - **Any other country** uses OONI volunteer measurements from that country from the last 7 days, judged by share rather than by single reports: at least half confirmed blocked → Blocked; 70%+ problems (anomaly or confirmed) with 5+ measurements → Blocked if any are confirmed, else Possibly blocked; 20%+ problems → Possibly blocked; otherwise Accessible (a few blocked networks, such as schools or offices, are noted but do not flip the result); no recent data → Unknown, never a guessed "Accessible". These results carry the `ooni_only` evidence and lower confidence.
 - **Also check from my own connection** (Settings, on by default, can be turned off): the browser tries `https://site/` and `https://www.site/` itself (no cookies, 8 s timeout, 4 at a time, remembered for 10 minutes). If it opens, the result becomes Accessible; if it fails, it becomes Possibly blocked, or stays Blocked when the server already says so. Because this goes through the VPN when one is on, it answers "does it open for me right now". Each site sees that connection, like a visit.
 - The extension caches results per country and asks `GET /api/v1/whereami` at most once a minute. When the country changes (VPN on/off), open search pages re-check automatically. The popup shows "Country: Germany (from your IP)" and Settings shows which source is used.
@@ -149,6 +153,7 @@ The website's **Download video** page (`download.html`) takes any link and lists
 - The lookup also returns a **preview**: the page's thumbnail (video `poster`, `og:image`, `twitter:image` or schema.org `thumbnailUrl`), served through `GET /api/v1/media/thumbnail?t=…` (JPEG, PNG, WebP, GIF or AVIF only, up to 5 MB, never SVG), and for direct files a small inline player through `GET /api/v1/media/preview?t=…` (same stream as the download, `inline`, with byte ranges for seeking, on its own small pool of slots). Streams without a page show a placeholder with the best quality.
 - `GET /api/v1/media/download?t=…` streams the file with `Content-Disposition: attachment`. HLS and DASH segments are fetched 4 at a time with retries; fragmented MP4 video with separate sound is joined into one MP4 by the same muxer the extension uses; TS streams save as `.ts`; DASH single-file renditions are split by their `sidx` index when they need joining.
 - Every request (link, redirect, playlist, segment) is checked against private and reserved addresses and pinned to the resolved IP. Downloads are limited by `MEDIA_MAX_MB` (default 4096), `MEDIA_MAX_CONCURRENT` (6) and `MEDIA_MAX_PER_CLIENT` (2); `MEDIA_DOWNLOADS=false` turns the route off. These two routes are not request-logged, so pasted links are not stored.
+- **TikTok links** are looked up through TikTok's official oEmbed endpoint and shown in TikTok's own embed player (`https://www.tiktok.com/player/v1/<id>`), with the creator and an "Open in TikTok" button. No TikTok file is downloaded yet; downloads will come through TikTok's official API once access is set up. The website's "TikTok permission" links read `VITE_TIKTOK_PERMISSION_URL` (`#` until it is provided).
 - Not supported, on purpose: YouTube, Facebook, Instagram, TikTok, X, Vimeo, Netflix and similar platforms that do not allow downloading (list in `extension/src/core/restricted-sites.ts`), adult tube sites, encrypted or DRM streams, and live streams.
 - Downloads pass through the server, so they use its bandwidth. Set a lower `MEDIA_MAX_MB` or turn the route off on a small VPS.
 
@@ -164,7 +169,7 @@ backend/
   src/app.ts                    Fastify app, rate limit, routes
   src/routes/                   accessibility.ts (POST /check), status.ts (GET /status)
   src/services/                 dns-checker, http-checker, blockpage, ooni-service,
-                                pakistan-probe, classification-engine, accessibility-service
+                                network-probe, classification-engine, accessibility-service
   src/database/                 repository, migrate, pool
   src/utils/                    domain + IP validation, TTL cache, limiter
   migrations/001_init.sql
@@ -178,7 +183,7 @@ extension/
   scripts/build.mjs             builds pages (Vite), scripts (esbuild), manifest and icons
   test/
 docs/
-  DEPLOYMENT.md                 Pakistan VPS + production guide
+  DEPLOYMENT.md                 VPS + production guide
   OONI.md                       OONI integration notes
 ```
 
@@ -197,23 +202,23 @@ cd extension && npm install && npm run build
 `npm run build` uses `API_URL` (default `http://localhost:8787`). For production:
 
 ```bash
-cd extension && API_URL=https://pk-probe.example.com npm run package
+cd extension && API_URL=https://probe.example.com npm run package
 ```
 
 Only `https://` URLs are accepted, except localhost.
 
-Running locally is fine for development, but checks then reflect **your** network, not Pakistan.
+Running locally is fine for development, but checks then reflect **your** network, not the probe country's.
 
 ### Install the extension in Chrome
 
 1. Build it (`npm run build` in `extension/`).
 2. Open `chrome://extensions`, turn on **Developer mode**.
 3. Click **Load unpacked** and select `extension/dist`.
-4. Search on google.com or google.com.pk.
+4. Search on any Google domain, Bing or DuckDuckGo.
 
 ### Edge and Firefox
 
-- **Edge:** the Chrome build works as is. Load `extension/dist` from `edge://extensions` (Developer mode → Load unpacked), or upload `pk-access-filter.zip` from `npm run package` to Edge Add-ons.
+- **Edge:** the Chrome build works as is. Load `extension/dist` from `edge://extensions` (Developer mode → Load unpacked), or upload `netvron-chrome.zip` from `npm run package` to Edge Add-ons.
 - **Firefox (128+):** `npm run build:firefox` writes `extension/dist-firefox/`, and `npm run package:firefox` zips it. Load it from `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → pick `dist-firefox/manifest.json`. Firefox uses an event page instead of a service worker and has no offscreen documents, so HLS/DASH stream downloads say they are not supported there; badges, the popup, right-click checks, failed-site pages, direct file downloads and night downloads work. In Firefox, also allow the API host in the add-on's permissions if it asks.
 
 ### Tests
@@ -245,11 +250,11 @@ Backend tests cover domain/IP validation, SSRF guards, redirect rules, block-pag
       "domain": "example.com",
       "status": "accessible",
       "confidence": 0.9,
-      "country": "PK",
+      "country": "NL",
       "lastChecked": "2026-11-01T13:08:11.359Z",
       "evidence": ["dns_resolved", "control_dns_resolved", "https_connection_success", "https_status_200", "ooni_recent_ok"],
-      "method": "DNS + HTTPS/HTTP probe from Pakistan, cross-checked with OONI",
-      "network": { "isp": "PTCL", "asn": "AS17557", "city": "Karachi" },
+      "method": "DNS + HTTPS/HTTP test from a local network, cross-checked with OONI",
+      "network": { "isp": "NetOne", "asn": "AS64500", "city": "Capital City" },
       "ttlSeconds": 1200
     }
   ],
@@ -259,7 +264,7 @@ Backend tests cover domain/IP validation, SSRF guards, redirect rules, block-pag
 
 Max 20 domains per request. Invalid, private or reserved hosts come back in `rejected` and are never contacted.
 
-`GET /api/v1/whereami?country=auto` returns `{ country, source, measuredBy }` for the caller. `GET /api/v1/status` returns probe network info, `probeCountries` and the caller's `viewer` country. `GET /api/v1/history?domain=…&country=PK` has data only for the probe country. `GET /health` returns `{ "ok": true }`.
+`GET /api/v1/whereami?country=auto` returns `{ country, source, measuredBy }` for the caller. `GET /api/v1/status` returns probe network info, `probeCountries` and the caller's `viewer` country. `GET /api/v1/history?domain=…&country=NL` has data only for the probe country. `GET /health` returns `{ "ok": true }`.
 
 ## Security and privacy
 
@@ -275,6 +280,6 @@ Max 20 domains per request. Invalid, private or reserved hosts come back in `rej
 ## Known limits
 
 - Countries without a test server depend on OONI coverage; little-measured sites show Unknown there unless the own-connection check is on.
-- One VPS = one ISP. Other Pakistani ISPs may block differently; OONI data per ASN partly covers this (see `docs/DEPLOYMENT.md` for adding more probes).
+- One VPS = one ISP. Other ISPs in the same country may block differently; OONI data per ASN partly covers this (see `docs/DEPLOYMENT.md` for adding more probes).
 - Google changes its markup often. Detection relies on `#search a h3`, `[data-hveid]` and the displayed URL; if badges stop appearing, update `extension/src/content/result-detector.ts`.
 - Block-page fingerprints live in `backend/src/services/blockpage.ts`; add new ones there.
