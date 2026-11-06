@@ -1,6 +1,7 @@
 import { errorMessage } from '../core/errors';
 import { interleave, mergeInitSegments, retagFragment } from '../core/fmp4';
 import type { StreamPlan, StreamSegment, StreamTrack } from '../core/hls';
+import { mimeForExtension } from '../core/media';
 import { runSegments, SegmentError, type SegmentChunk } from '../core/segment-pipeline';
 import type { OffscreenCommand, OffscreenEvent } from '../core/stream-jobs';
 
@@ -100,7 +101,8 @@ async function writeFile(
 }
 
 async function publish(context: JobContext, handle: FileSystemFileHandle, index: number, extension: string): Promise<void> {
-  const url = URL.createObjectURL(await handle.getFile());
+  const file = await handle.getFile();
+  const url = URL.createObjectURL(file.slice(0, file.size, mimeForExtension(extension)));
   context.job.urls.push(url);
   blobUrls.set(context.id, context.job.urls);
   context.flush();

@@ -1,8 +1,9 @@
 import { errorMessage } from '../core/errors';
 import { describeInterrupt } from '../core/download-errors';
-import { buildFilename, titleFromUrl } from '../core/filename';
+import { titleFromUrl } from '../core/filename';
 import type { DownloadResult } from '../core/messages';
 import { addDownloadRecord, readDownloadRecords } from '../shared/download-store';
+import { saveFile } from './download-names';
 import { inspectMedia } from './media-inspector';
 import { notify } from './notify';
 
@@ -54,12 +55,7 @@ export async function startDownload(rawUrl: string, title: string): Promise<Down
       return { ok: false, error: 'This video is already downloading' };
     }
     const name = title.trim() || titleFromUrl(info.url);
-    const id = await chrome.downloads.download({
-      url: info.url,
-      filename: buildFilename(name, info.extension),
-      conflictAction: 'uniquify',
-      saveAs: false,
-    });
+    const id = await saveFile(info.url, name, info.extension);
     await addDownloadRecord({
       id,
       url: info.url,

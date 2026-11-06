@@ -11,7 +11,7 @@ export type Request =
   | { type: 'check'; domains: string[] }
   | { type: 'site-status'; domain: string }
   | { type: 'inspect-media'; url: string }
-  | { type: 'download'; url: string; title: string; pageUrl?: string; audioOnly?: boolean }
+  | { type: 'download'; url: string; title: string; pageUrl?: string; audioOnly?: boolean; maxHeight?: number }
   | { type: 'schedule-download'; url: string; title: string; pageUrl?: string; audioOnly?: boolean }
   | { type: 'unschedule-download'; id: string }
   | { type: 'stream-control'; id: string; action: StreamControl }

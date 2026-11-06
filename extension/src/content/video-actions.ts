@@ -1,7 +1,10 @@
+import { downloadChoices, type DownloadChoice } from '../core/download-choices';
 import { formatBytes } from '../core/download-errors';
 import { sendRequest } from '../shared/messaging';
 import type { MediaInfo } from '../core/types';
 import type { VideoButton } from './video-button';
+
+const MENU_TITLE = 'Choose quality';
 
 export async function prepareDownload(button: VideoButton, url: string, title: string): Promise<MediaInfo | null> {
   button.onActivate(null);
@@ -16,16 +19,23 @@ export async function prepareDownload(button: VideoButton, url: string, title: s
     return null;
   }
   const detail = `${info.extension.toUpperCase()}, ${formatBytes(info.sizeBytes)}`;
-  const start = async () => {
+  const start = async (choice: DownloadChoice | null) => {
     button.set('starting', 'Starting download…');
-    const result = await sendRequest({ type: 'download', url: info.url, title });
+    const result = await sendRequest({ type: 'download', url: info.url, title, audioOnly: choice?.audioOnly, maxHeight: choice?.maxHeight });
     if (result?.ok) {
       button.set('started', 'Download started. Track it in the extension popup.');
     } else {
       button.set('error', `${result?.error ?? 'Could not start the download'}. Click to retry.`);
     }
   };
-  button.onActivate(() => void start());
-  button.set('ready', `Download ${detail}`);
+  const choices = downloadChoices(info);
+  if (choices.length === 0) {
+    button.onActivate(() => void start(null));
+    button.set('ready', `Download ${detail}`);
+    return info;
+  }
+  const items = choices.map((choice) => ({ label: choice.label, detail: choice.detail, pick: () => void start(choice) }));
+  button.onActivate(() => button.toggleMenu(MENU_TITLE, items));
+  button.set('ready', `Download ${detail}. Click to choose a quality.`);
   return info;
 }

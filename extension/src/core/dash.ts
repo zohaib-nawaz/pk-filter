@@ -1,4 +1,4 @@
-import { canCombine, capByHeight, estimateBytes, shortSide, type StreamPlan, type StreamSegment, type StreamTrack } from './hls';
+import { canCombine, capByHeight, estimateBytes, listQualities, shortSide, type StreamPlan, type StreamSegment, type StreamTrack } from './hls';
 import { subtitleLanguage, type SubtitleTrack } from './subtitles';
 import { safeHttpUrl } from './media';
 
@@ -513,6 +513,8 @@ export function planFromDash(xml: string, baseUrl: string, maxHeight = Number.PO
   const audio = video.kind === 'video' && !muxedAudio(video) ? best(reps, 'audio') : undefined;
   const tracks = audio ? [toTrack(video), toTrack(audio)] : [toTrack(video)];
   const resolution = video.width > 0 && video.height > 0 ? `${video.width}x${video.height}` : null;
+  const audioBandwidth = best(reps, 'audio')?.bandwidth ?? 0;
+  const videoReps = reps.filter((item) => item.kind === 'video');
   return {
     manifestUrl: baseUrl,
     tracks,
@@ -521,5 +523,9 @@ export function planFromDash(xml: string, baseUrl: string, maxHeight = Number.PO
     estimatedBytes: estimateBytes(video.bandwidth + (audio?.bandwidth ?? 0), durationSeconds),
     resolution,
     subtitles: dashSubtitles(period, base),
+    qualities: listQualities(
+      videoReps.map((item) => ({ height: shortSide(item.width, item.height), bandwidth: item.bandwidth + (muxedAudio(item) ? 0 : audioBandwidth) })),
+      durationSeconds,
+    ),
   };
 }

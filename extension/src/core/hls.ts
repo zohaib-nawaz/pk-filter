@@ -58,6 +58,12 @@ export interface StreamPlan {
   estimatedBytes: number | null;
   resolution: string | null;
   subtitles?: SubtitleTrack | null;
+  qualities?: MediaQuality[];
+}
+
+export interface MediaQuality {
+  height: number;
+  sizeBytes: number | null;
 }
 
 const ATTRIBUTE = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/g;
@@ -238,6 +244,26 @@ function rankVariants(master: HlsMaster, maxHeight: number): HlsVariant[] {
   const video = master.variants.filter((variant) => !isAudioOnlyVariant(variant));
   const candidates = capByHeight(video.length > 0 ? video : master.variants, maxHeight, (variant) => heightOf(variant.resolution));
   return [...candidates].sort((a, b) => b.bandwidth - a.bandwidth || Number(a.audioUri !== null) - Number(b.audioUri !== null));
+}
+
+export function listQualities(options: Array<{ height: number; bandwidth: number }>, durationSeconds: number): MediaQuality[] {
+  const best = new Map<number, number>();
+  for (const option of options) {
+    if (option.height > 0 && option.bandwidth >= (best.get(option.height) ?? 0)) {
+      best.set(option.height, option.bandwidth);
+    }
+  }
+  return [...best.entries()]
+    .sort(([a], [b]) => b - a)
+    .map(([height, bandwidth]) => ({ height, sizeBytes: estimateBytes(bandwidth, durationSeconds) }));
+}
+
+export function hlsQualities(master: HlsMaster, durationSeconds: number): MediaQuality[] {
+  const video = master.variants.filter((variant) => !isAudioOnlyVariant(variant));
+  return listQualities(
+    video.map((variant) => ({ height: heightOf(variant.resolution), bandwidth: variant.bandwidth })),
+    durationSeconds,
+  );
 }
 
 export function pickSubtitles(master: HlsMaster, variant: HlsVariant): HlsSubtitleOption | null {

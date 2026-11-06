@@ -18,6 +18,7 @@ export interface StreamJob {
   downloadIds: number[];
   startedAt: string;
   audioOnly?: boolean;
+  maxHeight?: number;
 }
 
 export interface StreamJobOptions {
@@ -41,7 +42,14 @@ export type OffscreenEvent =
 
 export const ACTIVE_STREAM_STATES = new Set<StreamJobState>(['downloading', 'paused', 'saving']);
 
-export function newStreamJob(id: string, plan: StreamPlan, title: string, pageUrl: string, now: Date, audioOnly = false): StreamJob {
+export function chosenHeight(maxHeight: number): number | undefined {
+  if (!Number.isFinite(maxHeight)) {
+    return undefined;
+  }
+  return maxHeight;
+}
+
+export function newStreamJob(id: string, plan: StreamPlan, title: string, pageUrl: string, now: Date, audioOnly = false, maxHeight = Number.POSITIVE_INFINITY): StreamJob {
   return {
     id,
     title,
@@ -58,5 +66,6 @@ export function newStreamJob(id: string, plan: StreamPlan, title: string, pageUr
     downloadIds: [],
     startedAt: now.toISOString(),
     audioOnly,
+    maxHeight: chosenHeight(maxHeight),
   };
 }

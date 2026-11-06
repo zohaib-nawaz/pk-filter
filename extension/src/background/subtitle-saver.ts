@@ -1,5 +1,5 @@
-import { buildFilename } from '../core/filename';
 import { mergeVtt, type SubtitleTrack } from '../core/subtitles';
+import { saveFile } from './download-names';
 
 const MAX_SEGMENTS = 2_000;
 const MAX_BYTES = 1_400_000;
@@ -40,10 +40,5 @@ export async function saveSubtitles(track: SubtitleTrack, title: string): Promis
   if (!text.trim().startsWith('WEBVTT') && !text.trim().startsWith('﻿WEBVTT')) {
     throw new Error('These subtitles are not in WebVTT format');
   }
-  await chrome.downloads.download({
-    url: downloadUrl(text),
-    filename: buildFilename(`${title}.${track.language}`, 'vtt'),
-    conflictAction: 'uniquify',
-    saveAs: false,
-  });
+  await saveFile(downloadUrl(text), `${title}.${track.language}`, 'vtt');
 }

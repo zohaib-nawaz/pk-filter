@@ -45,6 +45,10 @@ const MIME_EXTENSIONS: Record<string, string> = Object.entries(MEDIA_TYPES).redu
   { ...MIME_ALIASES },
 );
 
+export function mimeForExtension(extension: string): string {
+  return MEDIA_TYPES[extension.toLowerCase()] ?? 'application/octet-stream';
+}
+
 export const MEDIA_LINK_EXTENSIONS = Object.keys(MEDIA_TYPES).filter((extension) => extension !== 'ts');
 
 const STREAMING_EXTENSIONS = new Set(['m3u8', 'mpd', 'ism', 'f4m']);

@@ -43,5 +43,5 @@ export async function startAny(url: string, rawTitle: string, pageUrl: string | 
     }
     return startDownload(url, title);
   }
-  return startStreamJob(url, title, page, await streamJobOptions(options.audioOnly));
+  return startStreamJob(url, title, page, await streamJobOptions(options.audioOnly, options.maxHeight));
 }

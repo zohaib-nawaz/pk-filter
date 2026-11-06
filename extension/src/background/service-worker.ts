@@ -7,6 +7,7 @@ import { getHistory, getServiceStatus } from './api-client';
 import { checkDomains, lookupCached, resetBackoff } from './checker';
 import { createContextMenus, watchContextMenus } from './context-menu';
 import { watchDownloads } from './download-manager';
+import { watchFilenames } from './download-names';
 import { inspectAny, startAny } from './download-router';
 import { watchFailedSites } from './failed-sites';
 import { rescheduleNightQueue, scheduleDownload, unscheduleDownload, watchNightQueue } from './night-queue';
@@ -36,13 +37,20 @@ function isPageVideo(value: unknown): boolean {
   );
 }
 
+const MAX_HEIGHT = 8640;
+
+function isHeight(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= MAX_HEIGHT);
+}
+
 function isDownloadRequest(message: Record<string, unknown>): boolean {
   return (
     typeof message.url === 'string' &&
     message.url.length <= 4096 &&
     typeof message.title === 'string' &&
     (message.pageUrl === undefined || typeof message.pageUrl === 'string') &&
-    (message.audioOnly === undefined || typeof message.audioOnly === 'boolean')
+    (message.audioOnly === undefined || typeof message.audioOnly === 'boolean') &&
+    isHeight(message.maxHeight)
   );
 }
 
@@ -146,7 +154,7 @@ async function handle(request: Request, sender: chrome.runtime.MessageSender): P
     case 'inspect-media':
       return inspectAny(request.url, pageUrlFor(sender, undefined));
     case 'download':
-      return startAny(request.url, request.title, pageUrlFor(sender, request.pageUrl), { audioOnly: request.audioOnly === true });
+      return startAny(request.url, request.title, pageUrlFor(sender, request.pageUrl), { audioOnly: request.audioOnly === true, maxHeight: request.maxHeight });
     case 'schedule-download':
       return scheduleDownload({
         url: request.url,
@@ -222,6 +230,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 chrome.permissions.onAdded.addListener(() => watchFailedSites());
+watchFilenames();
 watchDownloads();
 watchStreamDownloads();
 watchTabs();

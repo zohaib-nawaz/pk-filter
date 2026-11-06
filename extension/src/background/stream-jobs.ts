@@ -1,9 +1,9 @@
 import { errorMessage } from '../core/errors';
-import { buildFilename } from '../core/filename';
 import { audioOnlyPlan, type StreamPlan } from '../core/hls';
 import type { DownloadResult } from '../core/messages';
-import { ACTIVE_STREAM_STATES, newStreamJob, type OffscreenCommand, type OffscreenEvent, type StreamControl, type StreamJob, type StreamJobOptions } from '../core/stream-jobs';
+import { ACTIVE_STREAM_STATES, chosenHeight, newStreamJob, type OffscreenCommand, type OffscreenEvent, type StreamControl, type StreamJob, type StreamJobOptions } from '../core/stream-jobs';
 import { readStreamJobs, STREAM_JOBS_KEY } from '../shared/stream-job-store';
+import { saveFile } from './download-names';
 import { notify } from './notify';
 import { resolveStream } from './stream-resolver';
 import { streamJobOptions } from './stream-options';
@@ -140,11 +140,12 @@ export async function startStreamJob(url: string, title: string, pageUrl: string
   }
   const job = await serial(async () => {
     const jobs = await readStreamJobs();
-    const sameJob = (item: StreamJob) => item.manifestUrl === plan.manifestUrl && Boolean(item.audioOnly) === options.audioOnly;
+    const height = chosenHeight(options.maxHeight);
+    const sameJob = (item: StreamJob) => item.manifestUrl === plan.manifestUrl && Boolean(item.audioOnly) === options.audioOnly && item.maxHeight === height;
     if (jobs.some((item) => sameJob(item) && ACTIVE_STREAM_STATES.has(item.state))) {
       return null;
     }
-    const created = newStreamJob(crypto.randomUUID(), plan, title.trim() || 'video', pageUrl, new Date(), options.audioOnly);
+    const created = newStreamJob(crypto.randomUUID(), plan, title.trim() || 'video', pageUrl, new Date(), options.audioOnly, options.maxHeight);
     await writeJobs([created, ...jobs]);
     return created;
   });
@@ -169,12 +170,7 @@ async function saveTrack(event: Extract<OffscreenEvent, { type: 'stream-track-re
     return;
   }
   const suffix = job.trackCount > 1 && event.index > 0 ? ' (audio)' : '';
-  const downloadId = await chrome.downloads.download({
-    url: event.url,
-    filename: buildFilename(`${job.title}${suffix}`, event.extension),
-    conflictAction: 'uniquify',
-    saveAs: false,
-  });
+  const downloadId = await saveFile(event.url, `${job.title}${suffix}`, event.extension);
   const saved = await updateJob(event.id, (current) => {
     if (!ACTIVE_STREAM_STATES.has(current.state)) {
       return null;
@@ -288,7 +284,7 @@ export async function controlStreamJob(id: string, action: StreamControl): Promi
     return { ok: false };
   }
   if (action === 'retry') {
-    const result = await startStreamJob(job.manifestUrl, job.title, job.pageUrl, await streamJobOptions(job.audioOnly === true));
+    const result = await startStreamJob(job.manifestUrl, job.title, job.pageUrl, await streamJobOptions(job.audioOnly === true, job.maxHeight));
     if (!result.ok) {
       return { ok: false };
     }

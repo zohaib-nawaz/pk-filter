@@ -1,3 +1,5 @@
+import type { MediaQuality } from './hls';
+
 export type AccessStatus = 'accessible' | 'blocked' | 'possibly_blocked' | 'unknown' | 'server_error';
 
 export type DisplayStatus = AccessStatus | 'checking';
@@ -115,6 +117,8 @@ export interface MediaInfo {
   sizeBytes: number | null;
   reason: string;
   separateAudio?: boolean;
+  qualities?: MediaQuality[];
+  audioOnly?: boolean;
 }
 
 export interface DownloadRecord {
@@ -151,6 +155,7 @@ export interface PageVideo {
 
 export interface DownloadOptions {
   audioOnly: boolean;
+  maxHeight?: number;
 }
 
 export interface ScheduledDownload {

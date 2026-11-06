@@ -1,7 +1,7 @@
 import { errorMessage } from '../core/errors';
 import { planFromDash, REST_OF_FILE } from '../core/dash';
 import { parseSidx } from '../core/fmp4';
-import { canCombine, estimateBytes, parsePlaylist, pickMuxedVariant, pickSubtitles, pickVariant, streamProblem, trackExtension, type HlsMaster, type HlsMedia, type HlsPlaylist, type HlsVariant, type StreamPlan, type StreamSegment, type StreamTrack } from '../core/hls';
+import { audioOnlyPlan, canCombine, estimateBytes, hlsQualities, parsePlaylist, pickMuxedVariant, pickSubtitles, pickVariant, streamProblem, trackExtension, type HlsMaster, type HlsMedia, type HlsPlaylist, type HlsVariant, type StreamPlan, type StreamSegment, type StreamTrack } from '../core/hls';
 import { extensionFromPath, safeHttpUrl } from '../core/media';
 import { subtitleLanguage, type SubtitleTrack } from '../core/subtitles';
 import type { MediaInfo } from '../core/types';
@@ -193,7 +193,7 @@ async function chooseVariantPlan(manifestUrl: string, master: HlsMaster, maxHeig
 
 async function planMaster(manifestUrl: string, master: HlsMaster, maxHeight: number): Promise<StreamPlan> {
   const { plan, variant } = await chooseVariantPlan(manifestUrl, master, maxHeight);
-  return { ...plan, subtitles: await hlsSubtitles(master, variant) };
+  return { ...plan, subtitles: await hlsSubtitles(master, variant), qualities: hlsQualities(master, plan.durationSeconds) };
 }
 
 async function resolveHls(url: string, maxHeight: number): Promise<StreamPlan> {
@@ -220,6 +220,8 @@ export async function inspectStream(url: string, maxHeight = Number.POSITIVE_INF
       mime: isDash(url) ? 'application/dash+xml' : 'application/vnd.apple.mpegurl',
       sizeBytes: plan.estimatedBytes,
       separateAudio: plan.tracks.length > 1,
+      qualities: plan.qualities,
+      audioOnly: audioOnlyPlan(plan) !== null,
       reason: `${isDash(url) ? 'DASH' : 'HLS'} stream${plan.resolution ? ` ${plan.resolution}` : ''}${separate}`,
     };
   } catch (error) {

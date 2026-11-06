@@ -36,7 +36,6 @@ interface Manifest {
 }
 
 interface Placement {
-  tracked: TrackedVideo;
   left: number;
   top: number;
 }
@@ -58,7 +57,6 @@ const ICON_SIZE = 32;
 const ICON_INSET = 10;
 const PLACEMENT_STEP = 24;
 const PLACEMENT_TRIES = 8;
-const CHILDLESS_TAGS = new Set(['VIDEO', 'AUDIO', 'IMG', 'PICTURE', 'CANVAS', 'IFRAME', 'SVG', 'INPUT', 'SOURCE']);
 const SCAN_DEBOUNCE_MS = 800;
 const SCAN_MAX_WAIT_MS = 3_000;
 const REPORT_DEBOUNCE_MS = 300;
@@ -340,14 +338,10 @@ function iconTop(element: Element, rect: DOMRect): number {
   return start;
 }
 
-function mountTarget(element: Element): Element {
-  return CHILDLESS_TAGS.has(element.tagName.toUpperCase()) ? (element.parentElement ?? document.body) : element;
-}
-
-function mount(element: Element, button: VideoButton): void {
-  const target = mountTarget(element);
-  if (button.element.parentElement !== target) {
-    target.append(button.element);
+function mount(button: VideoButton): void {
+  const root = document.documentElement;
+  if (button.element.parentElement !== root) {
+    root.append(button.element);
   }
 }
 
@@ -361,53 +355,41 @@ function cachedIconTop(element: Element, tracked: TrackedVideo, rect: DOMRect): 
   return top;
 }
 
-function styleOffset(value: string): number {
-  const parsed = Number.parseFloat(value);
-  if (Number.isFinite(parsed)) {
-    return parsed;
-  }
-  return 0;
-}
-
 function measure(video: Element, tracked: TrackedVideo): Placement | null {
   const rect = video.getBoundingClientRect();
   if (rect.width < MIN_WIDTH || rect.height < MIN_HEIGHT) {
     return null;
   }
-  const host = tracked.button.element;
-  const current = host.getBoundingClientRect();
-  const originLeft = current.left - styleOffset(host.style.left);
-  const originTop = current.top - styleOffset(host.style.top);
-  const left = rect.right - ICON_INSET - ICON_SIZE - originLeft;
-  const top = cachedIconTop(video, tracked, rect) - originTop;
-  return { tracked, left, top };
+  const top = Math.max(cachedIconTop(video, tracked, rect), ICON_INSET);
+  const right = Math.min(rect.right, document.documentElement.clientWidth);
+  if (top + ICON_SIZE > rect.bottom || top + ICON_SIZE > window.innerHeight || right - ICON_SIZE < rect.left) {
+    return null;
+  }
+  return { left: right - ICON_INSET - ICON_SIZE, top };
 }
 
 function wantsIcon(tracked: TrackedVideo): boolean {
   return tracked.visible && !document.fullscreenElement && isVideoButtonShown(tracked.button.state(), showUnavailable);
 }
 
+function placementFor(video: Element, tracked: TrackedVideo): Placement | null {
+  if (!wantsIcon(tracked)) {
+    return null;
+  }
+  return measure(video, tracked);
+}
+
 function position(): void {
   frame = 0;
-  const shown: Array<[Element, TrackedVideo]> = [];
-  for (const [video, tracked] of videos) {
-    const show = wantsIcon(tracked);
-    tracked.button.element.toggleAttribute('data-visible', show);
-    if (show) {
-      mount(video, tracked.button);
-      shown.push([video, tracked]);
+  const placements = [...videos].map(([video, tracked]) => ({ tracked, placement: placementFor(video, tracked) }));
+  for (const { tracked, placement } of placements) {
+    if (placement) {
+      mount(tracked.button);
+      tracked.button.element.style.left = `${Math.round(placement.left)}px`;
+      tracked.button.element.style.top = `${Math.round(placement.top)}px`;
     }
+    tracked.button.show(placement !== null);
   }
-  const placements = shown.map(([video, tracked]) => measure(video, tracked));
-  placements.forEach((placement, index) => {
-    const [, tracked] = shown[index] as [Element, TrackedVideo];
-    if (!placement) {
-      tracked.button.element.toggleAttribute('data-visible', false);
-      return;
-    }
-    tracked.button.element.style.left = `${Math.round(placement.left)}px`;
-    tracked.button.element.style.top = `${Math.round(placement.top)}px`;
-  });
 }
 
 function schedulePosition(): void {
@@ -430,7 +412,7 @@ function trackVideo(video: HTMLVideoElement): void {
     thumbnail: null,
   };
   videos.set(video, tracked);
-  mount(video, button);
+  mount(button);
   video.addEventListener(
     'loadstart',
     () => {
@@ -464,7 +446,7 @@ function trackThumbnail(element: Element, url: string): void {
     thumbnail: url,
   };
   videos.set(element, tracked);
-  mount(element, button);
+  mount(button);
   intersection?.observe(element);
 }
 
