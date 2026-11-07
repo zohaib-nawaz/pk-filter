@@ -58,6 +58,7 @@ export const config = {
     maxConcurrent: numberFrom(process.env.MEDIA_MAX_CONCURRENT, 6),
     maxPerClient: numberFrom(process.env.MEDIA_MAX_PER_CLIENT, 2),
     ticketTtlMs: 6 * 3_600_000,
+    metaToken: process.env.META_OEMBED_TOKEN ?? '',
   },
   corsOrigins: listFrom(process.env.CORS_ORIGINS ?? 'http://localhost:3180'),
   probeToken: process.env.PROBE_TOKEN ?? '',

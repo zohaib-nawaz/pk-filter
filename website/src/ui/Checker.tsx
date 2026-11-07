@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { SiteCheckState } from '../hooks/useSiteCheck';
 import { CheckResultCard } from './CheckResultCard';
+import { BUTTON_LARGE, FIELD } from './styles';
 
 interface CheckerProps {
   state: SiteCheckState;
@@ -8,8 +9,6 @@ interface CheckerProps {
   examples: string[];
   onCheck: (input: string, country: string) => void;
 }
-
-const FIELD = 'rounded-xl border border-neutral-300 bg-white px-4 py-3 text-base outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 dark:border-neutral-700 dark:bg-neutral-900';
 
 function renderState(state: SiteCheckState) {
   if (state.phase === 'checking') {
@@ -76,7 +75,7 @@ export function Checker({ state, countries, examples, onCheck }: CheckerProps) {
         <button
           type="submit"
           disabled={busy}
-          className="rounded-xl bg-emerald-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60"
+          className={BUTTON_LARGE}
         >
           Check
         </button>

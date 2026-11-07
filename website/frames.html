@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frame extractor · %BRAND_NAME%</title>
+    <meta name="description" content="Save frames from any video at the frame rate and quality you choose, from lossless PNG to small WebP." />
+    <meta property="og:title" content="Frame extractor · %BRAND_NAME%" />
+    <meta property="og:description" content="Save frames from any video at the frame rate and quality you choose, from lossless PNG to small WebP." />
+    <meta name="theme-color" content="#188038" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import { mountFrames } from './src/entries.tsx';
+      mountFrames();
+    </script>
+  </body>
+</html>

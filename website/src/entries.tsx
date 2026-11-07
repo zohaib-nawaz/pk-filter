@@ -2,8 +2,10 @@ import { StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ISSUES_URL } from './core/config';
 import { DownloadPage } from './pages/DownloadPage';
+import { FramesPage } from './pages/FramesPage';
 import { HomePage } from './pages/HomePage';
 import { PrivacyPage } from './pages/PrivacyPage';
+import { ThumbnailsPage } from './pages/ThumbnailsPage';
 import { PageShell } from './ui/PageShell';
 import './styles.css';
 
@@ -25,4 +27,12 @@ export function mountPrivacy(): void {
 
 export function mountDownload(): void {
   mount(<DownloadPage />);
+}
+
+export function mountThumbnails(): void {
+  mount(<ThumbnailsPage />);
+}
+
+export function mountFrames(): void {
+  mount(<FramesPage />);
 }

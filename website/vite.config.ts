@@ -13,7 +13,13 @@ const config = {
   server: { port: 3180, strictPort: true, fs: { allow: [resolve(root, '..')] } },
   build: {
     rollupOptions: {
-      input: { index: resolve(root, 'index.html'), privacy: resolve(root, 'privacy.html'), download: resolve(root, 'download.html') },
+      input: {
+        index: resolve(root, 'index.html'),
+        privacy: resolve(root, 'privacy.html'),
+        download: resolve(root, 'download.html'),
+        thumbnails: resolve(root, 'thumbnails.html'),
+        frames: resolve(root, 'frames.html'),
+      },
     },
   },
   test: { include: ['test/**/*.test.ts'], environment: 'jsdom' },

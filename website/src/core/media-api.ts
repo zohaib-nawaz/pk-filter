@@ -142,10 +142,17 @@ export function bestQuality(lookup: VideoLookup): string | null {
   return `${Math.max(...heights)}p`;
 }
 
-export async function lookupVideo(url: string): Promise<VideoLookup> {
+export function lookupErrorMessage(error: unknown): string {
+  if (error instanceof LookupError) {
+    return error.message;
+  }
+  return 'Something went wrong. Try again.';
+}
+
+export async function postMedia<T>(route: 'formats' | 'thumbnails', url: string): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_URL}/api/v1/media/formats`, {
+    response = await fetch(`${API_URL}/api/v1/media/${route}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ url }),
@@ -160,7 +167,19 @@ export async function lookupVideo(url: string): Promise<VideoLookup> {
   if (!response.ok) {
     throw new LookupError(await errorMessage(response));
   }
-  const body = (await response.json()) as LookupBody;
+  return (await response.json()) as T;
+}
+
+export function thumbnailHref(token: string, download: boolean): string {
+  const route = mediaRoute('thumbnail', token) as string;
+  if (!download) {
+    return route;
+  }
+  return `${route}&download=1`;
+}
+
+export async function lookupVideo(url: string): Promise<VideoLookup> {
+  const body = await postMedia<LookupBody>('formats', url);
   const formats = Array.isArray(body.formats) ? body.formats.filter(isFormat) : [];
   return {
     title: typeof body.title === 'string' ? body.title : 'Video',

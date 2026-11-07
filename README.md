@@ -157,6 +157,21 @@ The website's **Download video** page (`download.html`) takes any link and lists
 - Not supported, on purpose: YouTube, Facebook, Instagram, TikTok, X, Vimeo, Netflix and similar platforms that do not allow downloading (list in `extension/src/core/restricted-sites.ts`), adult tube sites, encrypted or DRM streams, and live streams.
 - Downloads pass through the server, so they use its bandwidth. Set a lower `MEDIA_MAX_MB` or turn the route off on a small VPS.
 
+### Thumbnail finder and frame extractor
+
+The **Thumbnails** page (`thumbnails.html`) lists every thumbnail size a video offers, through `POST /api/v1/media/thumbnails` `{ "url": "…" }`:
+
+- **YouTube** (videos, Shorts, embeds, `youtu.be`): title from YouTube's public oEmbed, images from `i.ytimg.com` in HD, Standard, High, Medium and Small. Sizes the video does not have are left out. YouTube pads the smaller sizes with black bars; the proxy trims them and crops to the video's own shape (16:9, 9:16 and so on), so every size matches the original.
+- **Vimeo, Dailymotion and TikTok**: their official oEmbed endpoints. Vimeo gets several widths of the same image.
+- **Instagram and Facebook**: Meta's official oEmbed, only when `META_OEMBED_TOKEN` (`APP_ID|CLIENT_TOKEN` of an app with oEmbed Read access) is set. Without it the page explains that the API is not connected.
+- **Any other page**: every `poster`, `og:image`, `twitter:image` and schema.org `thumbnailUrl` it declares. A direct image link is returned as is. X, Netflix, adult sites and the rest of the restricted list are refused.
+
+Each image comes back as a signed token for `GET /api/v1/media/thumbnail?t=…`; adding `&download=1` saves it as `<title> (<size>).jpg`. Video files are never fetched by this route.
+
+The **Frames** page (`frames.html`) runs entirely in the browser. It opens a video file from the device (nothing is uploaded) or a direct video link through the same preview stream as the downloader, then saves frames over a chosen range, either at a frame rate (one every 10 seconds up to 60 per second) or as an exact number spread evenly, in the chosen quality: lossless PNG, HD JPG, or smaller JPG and WebP down to 240p, with a compression slider. Up to 600 frames per run; they download one by one or together as a ZIP built from the frames without copying them.
+
+File names follow a pattern with fixed text and variables: `{n}` (counter, with automatic or fixed padding and a chosen start), `{time}`, `{ms}`, `{title}`, `{width}`, `{height}`, `{fps}` and `{date}`. There are ready styles such as `frame-{n}` or `{title}-{time}`, and names can be changed after extracting without extracting again. Unsafe characters are replaced and repeated names get `-2`, `-3`.
+
 The backend now builds with esbuild (`npm run build` → `dist/server.js`), because it shares the HLS, DASH and MP4 code in `extension/src/core` with the extension.
 
 `npm run build` writes static files to `website/dist/` for any static host. Set `VITE_API_URL` (the backend, https in production) and optionally `VITE_REPO_URL` at build time; see `website/.env.example`. The backend only answers browsers from origins in `CORS_ORIGINS` (default `http://localhost:3180`, the local preview port), so add the website's address there in production.

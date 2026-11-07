@@ -1,4 +1,5 @@
 import type { VideoEmbed } from '../core/media-api';
+import { BUTTON } from './styles';
 
 interface TikTokNoticeProps {
   embed: VideoEmbed;
@@ -27,7 +28,7 @@ export function TikTokNotice({ embed, permissionUrl }: TikTokNoticeProps) {
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <a href={embed.openUrl} target="_blank" rel="noopener noreferrer" className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white shadow-sm hover:bg-emerald-700">
+        <a href={embed.openUrl} target="_blank" rel="noopener noreferrer" className={BUTTON}>
           Open in TikTok
         </a>
         {renderAuthor(embed)}
