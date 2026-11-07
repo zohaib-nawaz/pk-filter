@@ -336,3 +336,140 @@ describe('tiktok links', () => {
     expect(response.json()).toMatchObject({ message: 'This TikTok video could not be found. It may be private or removed.' });
   });
 });
+
+describe('thumbnail finder', () => {
+  async function thumbnailsFor(server: Awaited<ReturnType<typeof app>>, url: string) {
+    return server.inject({ method: 'POST', url: '/api/v1/media/thumbnails', payload: { url } });
+  }
+
+  it('reads YouTube ids from every link shape', async () => {
+    const { youtubeId } = await import('../src/services/media/video-links.js');
+    const id = 'dQw4w9WgXcQ';
+    for (const link of [
+      `https://www.youtube.com/watch?v=${id}&t=10`,
+      `https://youtu.be/${id}?si=abc`,
+      `https://m.youtube.com/shorts/${id}`,
+      `https://www.youtube.com/embed/${id}`,
+      `https://www.youtube.com/live/${id}?feature=share`,
+      `https://www.youtube-nocookie.com/embed/${id}`,
+    ]) {
+      expect(youtubeId(new URL(link))).toBe(id);
+    }
+    expect(youtubeId(new URL('https://www.youtube.com/@channel'))).toBeNull();
+  });
+
+  it('lists the YouTube sizes that exist, largest first, through the official endpoints', async () => {
+    const id = 'dQw4w9WgXcQ';
+    const watch = `https://www.youtube.com/watch?v=${id}`;
+    web.set(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(watch)}`, {
+      type: 'application/json',
+      body: JSON.stringify({ title: 'Launch talk', author_name: 'Example Channel' }),
+    });
+    web.set(`https://i.ytimg.com/vi/${id}/maxresdefault.jpg`, { type: 'image/jpeg', body: Buffer.from([0xff, 0xd8]) });
+    const server = await app();
+    const response = await thumbnailsFor(server, `https://youtu.be/${id}`);
+    const body = response.json() as { title: string; author: string; source: string; thumbnails: Array<{ label: string; token: string }> };
+    expect(body).toMatchObject({ title: 'Launch talk', author: 'Example Channel', source: 'youtube' });
+    expect(body.thumbnails.map((item) => item.label)).toEqual(['HD', 'High', 'Medium', 'Small']);
+    const image = await server.inject({ method: 'GET', url: `/api/v1/media/thumbnail?t=${encodeURIComponent(body.thumbnails[0]?.token as string)}&download=1` });
+    expect(image.statusCode).toBe(200);
+    expect(image.headers['content-disposition']).toContain('attachment; filename="Launch talk (HD).jpg"');
+  });
+
+  it('explains removed YouTube videos', async () => {
+    const server = await app();
+    const response = await thumbnailsFor(server, 'https://www.youtube.com/watch?v=aaaaaaaaaaa');
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ message: 'This YouTube video could not be found. It may be private or removed.' });
+  });
+
+  it('collects every thumbnail a normal page declares and proxies them for the browser', async () => {
+    serve(
+      '/talk',
+      'text/html',
+      '<title>Talk</title><meta name="twitter:image" content="/card.png"><meta property="og:image" content="/share.jpg"><video poster="/poster.webp"></video><meta property="og:image" content="/share.jpg">',
+    );
+    serve('/share.jpg', 'image/jpeg', Buffer.from([0xff, 0xd8]));
+    const server = await app();
+    const body = (await thumbnailsFor(server, `${SITE}/talk`)).json() as { title: string; source: string; thumbnails: Array<{ label: string; token: string }> };
+    expect(body).toMatchObject({ title: 'Talk', source: 'page' });
+    expect(body.thumbnails.map((item) => item.label)).toEqual(['Video poster', 'Share image', 'Card image']);
+    const image = await server.inject({ method: 'GET', url: `/api/v1/media/thumbnail?t=${encodeURIComponent(body.thumbnails[1]?.token as string)}` });
+    expect(image.statusCode).toBe(200);
+    expect(image.headers['content-disposition']).toBeUndefined();
+    expect(seenReferers.at(-1)).toBe(`${SITE}/talk`);
+  });
+
+  it('says what to do for video files, Instagram without the API, and restricted sites', async () => {
+    serve('/clip.mp4', 'video/mp4', Buffer.from('0123'));
+    const server = await app();
+    const file = await thumbnailsFor(server, `${SITE}/clip.mp4`);
+    expect(file.statusCode).toBe(422);
+    expect(file.json()).toMatchObject({ message: expect.stringContaining('frame extractor') });
+    const instagram = await thumbnailsFor(server, 'https://www.instagram.com/reel/Cabc123/');
+    expect(instagram.statusCode).toBe(422);
+    expect(instagram.json()).toMatchObject({ error: 'unsupported' });
+    const restricted = await thumbnailsFor(server, 'https://www.netflix.com/title/80100172');
+    expect(restricted.statusCode).toBe(403);
+  });
+
+  it('lets ticket links past the lookup rate limit and caches images', async () => {
+    serve('/cover.jpg', 'image/jpeg', Buffer.from([0xff, 0xd8]));
+    const server = await buildApp({
+      service: { check: async () => [], drain: async () => undefined },
+      network: { country: 'NL', isp: 'NetOne', asn: 'AS64500', city: 'Capital City' },
+      ooniEnabled: false,
+      persistence: false,
+      rateLimitPerMinute: 2,
+      media: { secret: SECRET, maxBytes: 1024 * 1024, ticketTtlMs: 60_000, slots: createDownloadSlots(4, 1) },
+    });
+    const token = signTicket({ ref: { kind: 'thumbnail', url: `${SITE}/cover.jpg` }, title: 'Cover', exp: Date.now() + 60_000 }, SECRET);
+    const statuses = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const image = await server.inject({ method: 'GET', url: `/api/v1/media/thumbnail?t=${encodeURIComponent(token)}` });
+      statuses.push(image.statusCode);
+      expect(image.headers['cache-control']).toBe('private, max-age=3600');
+    }
+    expect(statuses).toEqual([200, 200, 200, 200]);
+    const lookups = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      lookups.push((await thumbnailsFor(server, `${SITE}/missing`)).statusCode);
+    }
+    expect(lookups.at(-1)).toBe(429);
+  });
+
+  it('offers several Vimeo sizes from the official oEmbed thumbnail', async () => {
+    const video = 'https://vimeo.com/76979871';
+    web.set(`https://vimeo.com/api/oembed.json?width=1920&url=${encodeURIComponent(video)}`, {
+      type: 'application/json',
+      body: JSON.stringify({ title: 'Player', author_name: 'Vimeo', thumbnail_url: 'https://i.vimeocdn.com/video/452001751-abc-d_1280?region=us' }),
+    });
+    const server = await app();
+    const body = (await thumbnailsFor(server, video)).json() as { thumbnails: Array<{ label: string; token: string }> };
+    expect(body.thumbnails.map((item) => item.label)).toEqual(['1280px wide', '640px wide', '295px wide']);
+    const ticket = readTicket(body.thumbnails[1]?.token as string, SECRET, Date.now());
+    expect(ticket?.ref).toMatchObject({ url: 'https://i.vimeocdn.com/video/452001751-abc-d_640?region=us' });
+  });
+});
+
+describe('thumbnail bars', () => {
+  it('snaps a trimmed box to the nearest standard shape', async () => {
+    const { snapToRatio } = await import('../src/services/media/image-trim.js');
+    expect(snapToRatio({ width: 640, height: 362 })).toEqual({ width: 640, height: 360 });
+    expect(snapToRatio({ width: 480, height: 280 })).toEqual({ width: 480, height: 270 });
+    expect(snapToRatio({ width: 205, height: 360 })).toEqual({ width: 203, height: 360 });
+    expect(snapToRatio({ width: 500, height: 100 })).toEqual({ width: 500, height: 100 });
+  });
+
+  it('removes letterbox bars from a 4:3 image and keeps clean ones untouched', async () => {
+    const { default: sharp } = await import('sharp');
+    const { trimBars } = await import('../src/services/media/image-trim.js');
+    const picture = await sharp({ create: { width: 640, height: 360, channels: 3, background: '#c0392b' } }).jpeg().toBuffer();
+    const boxed = await sharp({ create: { width: 640, height: 480, channels: 3, background: '#000000' } })
+      .composite([{ input: picture, top: 60, left: 0 }])
+      .jpeg()
+      .toBuffer();
+    expect(await sharp(await trimBars(boxed)).metadata()).toMatchObject({ width: 640, height: 360 });
+    expect(await trimBars(picture)).toBe(picture);
+  });
+});

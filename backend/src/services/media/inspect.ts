@@ -2,7 +2,7 @@ import { dashRenditions, type DashRendition } from '../../../../extension/src/co
 import { estimateBytes, heightOf, isAudioOnlyVariant, parsePlaylist, shortSide, streamProblem, trackExtension, type HlsMaster, type HlsMedia, type HlsVariant } from '../../../../extension/src/core/hls';
 import { isRestrictedHost } from '../../../../extension/src/core/restricted-sites';
 import { createLimiter } from '../../utils/limiter.js';
-import { expectOk, fetchText, MediaFetchError, openSafe, readBody, safeMediaUrl, type SafeResponse } from './safe-http.js';
+import { contentTypeOf, expectOk, fetchText, MediaFetchError, openSafe, readBody, safeMediaUrl, type SafeResponse } from './safe-http.js';
 import { pageMediaSources, pageThumbnail, pageTitle } from './page-sources.js';
 import { isTikTokUrl, tiktokInspection } from './tiktok.js';
 import { MediaUnavailable, type MediaFormat, type MediaInspection } from './types.js';
@@ -15,11 +15,6 @@ const AUDIO_ESTIMATE_BPS = 128_000;
 const MEDIA_EXTENSIONS = new Set(['mp4', 'm4v', 'webm', 'mov', 'mkv', 'ts', 'mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'flac']);
 const AUDIO_EXTENSIONS = new Set(['mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'flac']);
 const HLS_TYPES = ['application/vnd.apple.mpegurl', 'application/x-mpegurl', 'audio/mpegurl', 'audio/x-mpegurl'];
-
-function contentType(response: SafeResponse): string {
-  const header = response.headers['content-type'];
-  return (Array.isArray(header) ? header[0] : header || '').split(';')[0]?.trim().toLowerCase() || '';
-}
 
 function extensionOf(url: string): string {
   const match = /\.([a-z0-9]{2,4})$/i.exec(new URL(url).pathname);
@@ -91,9 +86,9 @@ function isAudioFile(type: string, extension: string): boolean {
 }
 
 function fileInspection(response: SafeResponse): MediaInspection {
-  const extension = extensionOf(response.finalUrl) || contentType(response).split('/')[1] || 'mp4';
+  const extension = extensionOf(response.finalUrl) || contentTypeOf(response).split('/')[1] || 'mp4';
   const height = heightFromUrl(response.finalUrl);
-  const audioOnly = isAudioFile(contentType(response), extension);
+  const audioOnly = isAudioFile(contentTypeOf(response), extension);
   response.body.destroy();
   const format: MediaFormat = {
     label: audioOnly ? 'Audio file' : height ? qualityLabel(height) : 'Original file',
@@ -340,7 +335,7 @@ async function inspectResource(url: string, depth: number, referer: string | und
     response.body.destroy();
     throw new MediaUnavailable('restricted', 'This website does not allow downloads, so it is not supported');
   }
-  const type = contentType(response);
+  const type = contentTypeOf(response);
   const extension = extensionOf(response.finalUrl);
   if (isMediaType(type, extension) && !HLS_TYPES.includes(type)) {
     return fileInspection(response);

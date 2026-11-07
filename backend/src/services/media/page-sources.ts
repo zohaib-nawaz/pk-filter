@@ -106,48 +106,62 @@ export function pageTitle(html: string): string | null {
   return text;
 }
 
-const THUMBNAIL_KEYS = ['og:image:secure_url', 'og:image', 'og:image:url', 'twitter:image', 'twitter:image:src'];
-const JSON_THUMBNAIL = /"thumbnailUrl"\s*:\s*(?:\[\s*)?"([^"]+)"/i;
-const POSTER = /<video\b[^>]*\bposter\s*=\s*(?:"([^"]+)"|'([^']+)')/i;
+export interface PageImage {
+  label: string;
+  url: string;
+  trimBars?: boolean;
+}
 
-function metaThumbnail(html: string): string | null {
-  const found = new Map<string, string>();
+const THUMBNAIL_KEYS: Record<string, string> = {
+  'og:image:secure_url': 'Share image',
+  'og:image': 'Share image',
+  'og:image:url': 'Share image',
+  'twitter:image': 'Card image',
+  'twitter:image:src': 'Card image',
+};
+const JSON_THUMBNAIL = /"thumbnailUrl"\s*:\s*(?:\[\s*)?"([^"]+)"/gi;
+const POSTER = /<video\b[^>]*\bposter\s*=\s*(?:"([^"]+)"|'([^']+)')/gi;
+const MAX_PAGE_IMAGES = 12;
+
+function metaThumbnails(html: string): PageImage[] {
+  const keys = Object.keys(THUMBNAIL_KEYS);
+  const found: Array<PageImage & { rank: number }> = [];
   for (const match of html.matchAll(META)) {
     const attrs = attributesOf(match[0]);
     const key = (attrs.property || attrs.name || '').toLowerCase();
-    if (THUMBNAIL_KEYS.includes(key) && attrs.content && !found.has(key)) {
-      found.set(key, attrs.content);
+    const label = THUMBNAIL_KEYS[key];
+    if (attrs.content && label) {
+      found.push({ label, url: attrs.content, rank: keys.indexOf(key) });
     }
   }
-  const key = THUMBNAIL_KEYS.find((name) => found.has(name));
-  if (!key) {
-    return null;
-  }
-  return found.get(key) as string;
+  return found.sort((a, b) => a.rank - b.rank).map(({ label, url }) => ({ label, url }));
 }
 
-function posterThumbnail(html: string): string | null {
-  const match = POSTER.exec(html);
-  if (!match) {
-    return null;
-  }
-  return decode((match[1] || match[2]) as string);
+function posterThumbnails(html: string): PageImage[] {
+  return [...html.matchAll(POSTER)].map((match) => ({ label: 'Video poster', url: decode((match[1] || match[2]) as string) }));
 }
 
-function jsonThumbnail(html: string): string | null {
-  const match = JSON_THUMBNAIL.exec(html);
-  if (!match) {
-    return null;
+function jsonThumbnails(html: string): PageImage[] {
+  return [...html.matchAll(JSON_THUMBNAIL)].map((match) => ({ label: 'Video thumbnail', url: decode(match[1] as string) }));
+}
+
+export function pageThumbnails(html: string, baseUrl: string): PageImage[] {
+  const seen = new Set<string>();
+  const images: PageImage[] = [];
+  for (const candidate of [...posterThumbnails(html), ...metaThumbnails(html), ...jsonThumbnails(html)]) {
+    const url = absolute(candidate.url, baseUrl);
+    if (url && !seen.has(url) && images.length < MAX_PAGE_IMAGES) {
+      seen.add(url);
+      images.push({ label: candidate.label, url });
+    }
   }
-  return decode(match[1] as string);
+  return images;
 }
 
 export function pageThumbnail(html: string, baseUrl: string): string | null {
-  for (const candidate of [posterThumbnail(html), metaThumbnail(html), jsonThumbnail(html)]) {
-    const url = candidate ? absolute(candidate, baseUrl) : null;
-    if (url) {
-      return url;
-    }
+  const [first] = pageThumbnails(html, baseUrl);
+  if (!first) {
+    return null;
   }
-  return null;
+  return first.url;
 }

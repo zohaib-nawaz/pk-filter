@@ -1,3 +1,5 @@
+import { MAX_FRAMES } from './frames';
+
 export interface NavLink {
   label: string;
   href: string;
@@ -30,7 +32,9 @@ export type IconName = 'badge' | 'filter' | 'globe' | 'network' | 'alert' | 'cur
 export const NAV_LINKS: NavLink[] = [
   { label: 'Features', href: '/#features' },
   { label: 'Check a site', href: '/#check' },
-  { label: 'Download video', href: '/download.html' },
+  { label: 'Download', href: '/download.html' },
+  { label: 'Thumbnails', href: '/thumbnails.html' },
+  { label: 'Frames', href: '/frames.html' },
   { label: 'How it works', href: '/#how' },
   { label: 'Install', href: '/#install' },
   { label: 'FAQ', href: '/#faq' },
@@ -182,4 +186,32 @@ export const DOWNLOAD_LIMITS = [
   'Netflix and any DRM-protected or encrypted video.',
   'Adult video sites.',
   'Live streams, and videos larger than the server limit.',
+];
+
+export const THUMBNAIL_SUPPORT = [
+  'YouTube videos and Shorts, in every size from Small to Full HD.',
+  'Vimeo, Dailymotion and TikTok, through their official embed services.',
+  'Any page that publishes a preview image: the player poster, og:image, Twitter cards or schema.org.',
+  'Direct image links.',
+];
+
+export const THUMBNAIL_LIMITS = [
+  'Instagram and Facebook, until this server is connected to Meta’s official API.',
+  'X, Netflix, adult sites and other platforms that do not share thumbnails publicly.',
+  'Private, removed or age-restricted videos.',
+  'Video files have no separate thumbnail. Use the frame extractor to save any frame instead.',
+];
+
+export const FRAME_SUPPORT = [
+  'Video files on your device, read in your browser. Nothing is uploaded.',
+  'Direct video links and pages that publish an MP4 or WebM file.',
+  'Any frame rate from one frame every few minutes up to 60 per second.',
+  'Lossless PNG, HD JPG, or compressed WebP down to 240p.',
+];
+
+export const FRAME_LIMITS = [
+  'Streams (HLS and DASH) and platforms that do not allow downloads. Download the video first, then open the file.',
+  'DRM-protected video.',
+  `More than ${MAX_FRAMES} frames in one go. Pick a shorter range or a lower frame rate.`,
+  'Formats your browser cannot play, such as some MKV and AVI files.',
 ];

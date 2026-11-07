@@ -256,6 +256,17 @@ export function expectOk(response: SafeResponse): void {
   throw new MediaFetchError('http_error', `The website answered with status ${response.status}`, response.status);
 }
 
+export function headerValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] || '';
+  }
+  return value || '';
+}
+
+export function contentTypeOf(response: SafeResponse): string {
+  return headerValue(response.headers['content-type']).split(';')[0]?.trim().toLowerCase() || '';
+}
+
 export async function fetchText(raw: string, maxBytes: number, options: SafeRequest = {}): Promise<{ text: string; finalUrl: string }> {
   const response = await openSafe(raw, options);
   expectOk(response);

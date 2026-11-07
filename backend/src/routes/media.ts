@@ -1,15 +1,16 @@
 import { Readable } from 'node:stream';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { TtlCache } from '../utils/ttl-cache.js';
-import { limited, openDownload, type ByteRange, type DownloadStream } from '../services/media/download.js';
+import { openDownload, type ByteRange, type DownloadStream } from '../services/media/download.js';
 import { inspectMediaUrl } from '../services/media/inspect.js';
-import { bodyChunks, expectOk, MediaFetchError, openSafe } from '../services/media/safe-http.js';
 import { createDownloadSlots, type DownloadSlots } from '../services/media/slots.js';
 import { readTicket, signTicket, type DownloadTicket } from '../services/media/token.js';
-import { MediaUnavailable, type FormatRef, type MediaFormat, type MediaInspection } from '../services/media/types.js';
+import type { FormatRef, MediaFormat, MediaInspection } from '../services/media/types.js';
+import { disposition, failureOf, linkBodySchema, LOOKUP_CACHE_MS, LOOKUP_CACHE_SIZE, NO_RATE_LIMIT, sendFailure, ticketQuerySchema, wantsHtml } from './media-replies.js';
 
 export interface MediaRouteOptions {
   secret: string;
+  metaToken?: string | null;
   maxBytes: number;
   slots: DownloadSlots;
   previewSlots?: DownloadSlots;
@@ -17,77 +18,13 @@ export interface MediaRouteOptions {
   now?: () => number;
 }
 
-const formatsSchema = {
-  body: {
-    type: 'object',
-    required: ['url'],
-    additionalProperties: false,
-    properties: { url: { type: 'string', minLength: 4, maxLength: 4096 } },
-  },
-} as const;
-
-const downloadSchema = {
-  querystring: {
-    type: 'object',
-    required: ['t'],
-    properties: { t: { type: 'string', minLength: 10, maxLength: 16_384 } },
-  },
-} as const;
-
-const LOOKUP_CACHE_MS = 2 * 60_000;
-const LOOKUP_CACHE_SIZE = 500;
 const RANGE = /^bytes=(\d+)-(\d*)$/;
-const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
-const THUMBNAIL_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
-
-const FETCH_STATUS: Record<MediaFetchError['failure'], number> = {
-  invalid_url: 400,
-  unsafe_address: 400,
-  dns: 422,
-  http_error: 422,
-  too_large: 413,
-  timeout: 504,
-  network: 502,
-};
-
-interface Failure {
-  status: number;
-  error: string;
-  message: string;
-}
-
-function failureOf(error: unknown): Failure {
-  if (error instanceof MediaUnavailable) {
-    return { status: error.reason === 'restricted' ? 403 : 422, error: error.reason, message: error.message };
-  }
-  if (error instanceof MediaFetchError) {
-    return { status: FETCH_STATUS[error.failure], error: error.failure, message: error.message };
-  }
-  return { status: 502, error: 'failed', message: 'This video could not be read. Try again or pick another quality.' };
-}
 
 async function* startingWith(first: Uint8Array, rest: AsyncIterator<Uint8Array>): AsyncGenerator<Uint8Array> {
   yield first;
   for (let next = await rest.next(); !next.done; next = await rest.next()) {
     yield next.value;
   }
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
-}
-
-function wantsHtml(accept: string | undefined): boolean {
-  return typeof accept === 'string' && accept.includes('text/html');
-}
-
-function sendFailure(reply: FastifyReply, failure: Failure, html: boolean): FastifyReply {
-  reply.code(failure.status);
-  if (!html) {
-    return reply.send({ error: failure.error, message: failure.message });
-  }
-  const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Download did not start</title></head><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5"><h1 style="font-size:1.4rem">Download did not start</h1><p>${escapeHtml(failure.message)}</p><p style="color:#666">Go back to the downloader and look up the video again.</p></body></html>`;
-  return reply.type('text/html; charset=utf-8').send(page);
 }
 
 function rangeFrom(header: string | undefined): ByteRange | null {
@@ -117,13 +54,6 @@ function previewFormat(formats: MediaFormat[]): MediaFormat | undefined {
   return [...pool].sort((a, b) => playability(a) - playability(b) || (a.sizeBytes || Infinity) - (b.sizeBytes || Infinity))[0];
 }
 
-function headerText(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) {
-    return value[0] || '';
-  }
-  return value || '';
-}
-
 function downloadName(title: string, format: MediaFormat): string {
   if (format.audio === 'only') {
     return `${title} (audio)`;
@@ -132,11 +62,6 @@ function downloadName(title: string, format: MediaFormat): string {
     return `${title} (${format.label})`;
   }
   return title;
-}
-
-function disposition(filename: string, inline: boolean): string {
-  const ascii = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
-  return `${inline ? 'inline' : 'attachment'}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 function streamHeaders(reply: FastifyReply, download: DownloadStream, inline: boolean): void {
@@ -171,7 +96,7 @@ export const mediaRoutes: FastifyPluginAsync<MediaRouteOptions> = async (app, op
     return inspection;
   }
 
-  app.post<{ Body: { url: string } }>('/media/formats', { schema: formatsSchema, logLevel: 'warn' }, async (request, reply) => {
+  app.post<{ Body: { url: string } }>('/media/formats', { schema: linkBodySchema, logLevel: 'warn' }, async (request, reply) => {
     try {
       const pageUrl = request.body.url.trim();
       const inspection = await inspect(pageUrl);
@@ -239,31 +164,9 @@ export const mediaRoutes: FastifyPluginAsync<MediaRouteOptions> = async (app, op
     }
   }
 
-  const streamOptions = { schema: downloadSchema, logLevel: 'warn', exposeHeadRoute: false } as const;
+  const streamOptions = { schema: ticketQuerySchema, logLevel: 'warn', exposeHeadRoute: false, config: NO_RATE_LIMIT } as const;
 
   app.get<{ Querystring: { t: string } }>('/media/download', streamOptions, (request, reply) => serveMedia(request, reply, false));
 
   app.get<{ Querystring: { t: string } }>('/media/preview', streamOptions, (request, reply) => serveMedia(request, reply, true));
-
-  app.get<{ Querystring: { t: string } }>('/media/thumbnail', streamOptions, async (request, reply) => {
-    const ticket = readTicket(request.query.t, options.secret, now());
-    if (!ticket || ticket.ref.kind !== 'thumbnail') {
-      return reply.code(404).send({ error: 'not_found' });
-    }
-    try {
-      const response = await openSafe(ticket.ref.url, { referer: ticket.ref.referer, timeoutMs: 15_000 });
-      expectOk(response);
-      const type = headerText(response.headers['content-type']).split(';')[0]?.trim().toLowerCase() || '';
-      const length = Number(headerText(response.headers['content-length']));
-      if (!THUMBNAIL_TYPES.has(type) || length > THUMBNAIL_MAX_BYTES) {
-        response.body.destroy();
-        return reply.code(404).send({ error: 'not_found' });
-      }
-      reply.type(type);
-      reply.header('content-security-policy', "default-src 'none'");
-      return reply.send(Readable.from(limited(bodyChunks(response), THUMBNAIL_MAX_BYTES)));
-    } catch {
-      return reply.code(404).send({ error: 'not_found' });
-    }
-  });
 };

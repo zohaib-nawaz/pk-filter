@@ -15,7 +15,7 @@ export function SiteHeader({ links, repoUrl }: SiteHeaderProps) {
           <Logo className="h-7 w-7" />
           <span>{BRAND.name}</span>
         </a>
-        <nav aria-label="Main" className="hidden items-center gap-7 text-sm text-neutral-600 md:flex dark:text-neutral-300">
+        <nav aria-label="Main" className="hidden items-center gap-5 text-sm whitespace-nowrap text-neutral-600 lg:flex dark:text-neutral-300">
           {links.map((link) => (
             <a key={link.href} href={link.href} className="transition-colors hover:text-neutral-950 dark:hover:text-white">
               {link.label}
@@ -35,7 +35,7 @@ export function SiteHeader({ links, repoUrl }: SiteHeaderProps) {
           >
             Get the extension
           </a>
-          <details className="relative md:hidden">
+          <details className="relative lg:hidden">
             <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-neutral-200 dark:border-neutral-700" aria-label="Menu">
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
                 <path d="M4 7h16M4 12h16M4 17h16" />

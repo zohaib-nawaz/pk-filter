@@ -1,4 +1,5 @@
 import type { FormatRow } from '../core/media-api';
+import { BUTTON } from './styles';
 
 interface FormatListProps {
   heading: string;
@@ -24,7 +25,7 @@ export function FormatList({ heading, rows }: FormatListProps) {
             <a
               href={row.href}
               aria-label={`Download ${row.label}, ${row.audio.text}, ${row.size}`}
-              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 sm:col-start-3 sm:row-start-1"
+              className={`${BUTTON} sm:col-start-3 sm:row-start-1`}
               rel="nofollow"
             >
               Download

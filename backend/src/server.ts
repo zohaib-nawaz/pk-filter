@@ -70,6 +70,7 @@ const app = await buildApp({
         secret: config.media.secret,
         maxBytes: config.media.maxBytes,
         ticketTtlMs: config.media.ticketTtlMs,
+        metaToken: config.media.metaToken,
         slots: createDownloadSlots(config.media.maxConcurrent, config.media.maxPerClient),
       }
     : undefined,

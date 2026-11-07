@@ -8,6 +8,7 @@ export interface ThumbnailRef {
   kind: 'thumbnail';
   url: string;
   referer?: string;
+  trimBars?: boolean;
 }
 
 export type TicketRef = FormatRef | ThumbnailRef;

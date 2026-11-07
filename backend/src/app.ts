@@ -6,6 +6,7 @@ import { nullRepository, type CheckRepository } from './database/repository.js';
 import { accessibilityRoutes } from './routes/accessibility.js';
 import { historyRoutes } from './routes/history.js';
 import { mediaRoutes, type MediaRouteOptions } from './routes/media.js';
+import { thumbnailRoutes } from './routes/thumbnails.js';
 import { probeRoutes } from './routes/probe.js';
 import { statusRoutes } from './routes/status.js';
 import type { AccessibilityService } from './services/accessibility-service.js';
@@ -72,7 +73,9 @@ export async function buildApp(options: AppOptions) {
   }
 
   app.addHook('onSend', async (_request, reply) => {
-    reply.header('cache-control', 'no-store');
+    if (!reply.hasHeader('cache-control')) {
+      reply.header('cache-control', 'no-store');
+    }
     reply.header('x-content-type-options', 'nosniff');
   });
 
@@ -96,6 +99,7 @@ export async function buildApp(options: AppOptions) {
   await app.register(historyRoutes, { prefix: '/api/v1', repository: options.repository ?? nullRepository, country: options.network.country });
   if (options.media) {
     await app.register(mediaRoutes, { prefix: '/api/v1', ...options.media });
+    await app.register(thumbnailRoutes, { prefix: '/api/v1', ...options.media });
   }
   if (probeToken) {
     await app.register(probeRoutes, { prefix: '/api/v1', service: options.service, token: probeToken });

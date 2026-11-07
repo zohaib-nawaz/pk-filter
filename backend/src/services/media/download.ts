@@ -2,7 +2,7 @@ import { REST_OF_FILE, planFromDash } from '../../../../extension/src/core/dash'
 import { buildFilename } from '../../../../extension/src/core/filename';
 import { interleave, mergeInitSegments, parseSidx, retagFragment } from '../../../../extension/src/core/fmp4';
 import { canCombine, parsePlaylist, streamProblem, trackExtension, type HlsMedia, type StreamSegment, type StreamTrack } from '../../../../extension/src/core/hls';
-import { bodyChunks, expectOk, fetchBytes, fetchText, MediaFetchError, openSafe } from './safe-http.js';
+import { bodyChunks, expectOk, fetchBytes, fetchText, headerValue, MediaFetchError, openSafe } from './safe-http.js';
 import { MediaUnavailable, type FormatRef } from './types.js';
 
 export interface DownloadLimits {
@@ -275,17 +275,10 @@ function streamFor(tracks: StreamTrack[], title: string, context: FetchContext, 
   };
 }
 
-function headerText(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) {
-    return value[0] || '';
-  }
-  return value || '';
-}
-
 function validatorsOf(headers: Record<string, string | string[] | undefined>): Record<string, string> {
   const found: Record<string, string> = {};
   for (const name of ['etag', 'last-modified']) {
-    const value = headerText(headers[name]);
+    const value = headerValue(headers[name]);
     if (value) {
       found[name] = value;
     }
@@ -302,8 +295,8 @@ async function fileStream(ref: Extract<FormatRef, { kind: 'file' }>, title: stri
   const response = await openSafe(ref.url, { signal: context.signal, referer: context.referer, timeoutMs: 60_000, range: range ? range : undefined });
   expectOk(response);
   const partial = range !== null && response.status === 206;
-  const sizeBytes = positiveNumber(headerText(response.headers['content-length']));
-  const total = partial ? positiveNumber(/\/(\d+)$/.exec(headerText(response.headers['content-range']))?.[1] || '') : sizeBytes;
+  const sizeBytes = positiveNumber(headerValue(response.headers['content-length']));
+  const total = partial ? positiveNumber(/\/(\d+)$/.exec(headerValue(response.headers['content-range']))?.[1] || '') : sizeBytes;
   if (total !== null && total > limits.maxBytes) {
     response.body.destroy();
     throw new MediaFetchError('too_large', 'This video is larger than the download limit');
@@ -313,8 +306,8 @@ async function fileStream(ref: Extract<FormatRef, { kind: 'file' }>, title: stri
     contentType: contentTypeFor(ref.extension),
     sizeBytes,
     status: partial ? 206 : 200,
-    contentRange: partial ? headerText(response.headers['content-range']) || null : null,
-    acceptRanges: partial || headerText(response.headers['accept-ranges']).toLowerCase() === 'bytes',
+    contentRange: partial ? headerValue(response.headers['content-range']) || null : null,
+    acceptRanges: partial || headerValue(response.headers['accept-ranges']).toLowerCase() === 'bytes',
     validators: validatorsOf(response.headers),
     chunks: limited(bodyChunks(response), limits.maxBytes),
   };
